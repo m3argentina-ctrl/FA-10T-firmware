@@ -38,6 +38,9 @@ esp_err_t nvs_config_init(void)
     return err;
 }
 
+// Returns ESP_OK when a valid blob was read from NVS.
+// Returns ESP_ERR_NVS_NOT_FOUND when defaults were filled in (caller can
+// surface a "first boot / config lost" indication to the operator).
 esp_err_t nvs_config_load(fa10t_config_t *out)
 {
     if (!out) return ESP_ERR_INVALID_ARG;
@@ -47,7 +50,7 @@ esp_err_t nvs_config_load(fa10t_config_t *out)
     if (err != ESP_OK) {
         ESP_LOGI(TAG, "no saved config (%s), using defaults", esp_err_to_name(err));
         nvs_config_defaults(out);
-        return ESP_OK;
+        return ESP_ERR_NVS_NOT_FOUND;
     }
 
     size_t sz = sizeof(*out);
@@ -58,7 +61,7 @@ esp_err_t nvs_config_load(fa10t_config_t *out)
         ESP_LOGW(TAG, "config blob missing/invalid (err=%s sz=%u ver=%u), using defaults",
                  esp_err_to_name(err), (unsigned)sz, (unsigned)out->version);
         nvs_config_defaults(out);
-        return ESP_OK;
+        return ESP_ERR_NVS_NOT_FOUND;
     }
     ESP_LOGI(TAG, "config loaded: SP=%.1f°C Kp=%.2f Ki=%.3f Kd=%.2f",
              out->setpoint, out->kp, out->ki, out->kd);

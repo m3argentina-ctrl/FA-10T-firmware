@@ -34,12 +34,9 @@ static void sensor_task(void *arg)
         app_state_copy_config(&cfg);
         sample.temperature = cfg.cal_gain * r.temperature + cfg.cal_offset;
 
-        if (xQueueSend(q, &sample, 0) != pdTRUE) {
-            // Control task is keeping up — drop oldest to avoid stale data
-            sensor_sample_t drop;
-            xQueueReceive(q, &drop, 0);
-            xQueueSend(q, &sample, 0);
-        }
+        // Atomic replace: consumer always sees the most recent sample, no
+        // stale data and no producer-side races with other writers.
+        xQueueOverwrite(q, &sample);
 
         // Mirror into shared state for UI without waiting on control task
         app_state_lock();

@@ -5,6 +5,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_task_wdt.h"
+#include "sdkconfig.h"
 #include "ssr_driver.h"
 
 static const char *TAG = "safety";
@@ -32,9 +33,14 @@ esp_err_t safety_init(const safety_config_t *cfg)
     memset(&s, 0, sizeof(s));
     s.cfg = *cfg;
 
+#if CONFIG_FREERTOS_NUMBER_OF_CORES > 1
+    const uint32_t idle_mask = (1u << 0) | (1u << 1);
+#else
+    const uint32_t idle_mask = (1u << 0);
+#endif
     esp_task_wdt_config_t wdt = {
         .timeout_ms     = cfg->wdt_timeout_s * 1000,
-        .idle_core_mask = (1 << 0) | (1 << 1),
+        .idle_core_mask = idle_mask,
         .trigger_panic  = true,
     };
     // Reconfigure existing TWDT (created by IDF) instead of init, to honor sdkconfig.

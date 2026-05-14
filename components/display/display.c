@@ -117,7 +117,11 @@ esp_err_t display_init(const display_config_t *cfg)
     esp_lcd_panel_mirror(s_panel, cfg->mirror_x, cfg->mirror_y);
     esp_lcd_panel_disp_on_off(s_panel, true);
 
-    // LVGL
+    // LVGL — create the lock BEFORE lv_init() so any callback firing during
+    // init has something to take.
+    s_lvgl_mtx = xSemaphoreCreateRecursiveMutex();
+    ESP_RETURN_ON_FALSE(s_lvgl_mtx, ESP_ERR_NO_MEM, TAG, "lvgl mutex");
+
     lv_init();
     size_t buf_pixels = cfg->hres * LVGL_BUFFER_LINES;
     s_buf1 = heap_caps_malloc(buf_pixels * sizeof(lv_color_t), MALLOC_CAP_DMA);
@@ -131,8 +135,6 @@ esp_err_t display_init(const display_config_t *cfg)
     s_disp_drv.flush_cb = flush_cb;
     s_disp_drv.draw_buf = &s_draw_buf;
     lv_disp_drv_register(&s_disp_drv);
-
-    s_lvgl_mtx = xSemaphoreCreateRecursiveMutex();
 
     const esp_timer_create_args_t tick_args = {
         .callback = lvgl_tick_cb,

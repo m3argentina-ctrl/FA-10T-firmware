@@ -9,6 +9,7 @@
 #include "app_config.h"
 #include "app_state.h"
 #include "display.h"
+#include "safety.h"
 
 static const char *TAG = "ui_task";
 
@@ -34,7 +35,7 @@ static void ui_task(void *arg)
             st.setpoint       = as->setpoint;
             st.ssr_duty       = as->ssr_duty;
             st.sensor_fault   = as->last_sample.fault;
-            st.runaway        = (as->safety_faults & 0x04) != 0; // SAFETY_RUNAWAY
+            st.runaway        = (as->safety_faults & SAFETY_RUNAWAY) != 0;
             st.safety_tripped = (as->safety_faults != 0);
             st.uptime_s       = as->uptime_s;
             app_state_unlock();

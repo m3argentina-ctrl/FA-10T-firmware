@@ -14,7 +14,9 @@ void app_state_init(void)
 {
     memset(&s_state, 0, sizeof(s_state));
     s_mtx = xSemaphoreCreateMutex();
-    s_sensor_q = xQueueCreate(8, sizeof(sensor_sample_t));
+    // Depth 1 + xQueueOverwrite from the producer keeps the consumer (control
+    // loop) on the freshest sample without the racy drop-then-resend pattern.
+    s_sensor_q = xQueueCreate(1, sizeof(sensor_sample_t));
     if (!s_mtx || !s_sensor_q) {
         ESP_LOGE(TAG, "primitives alloc failed");
         abort();

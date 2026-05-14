@@ -15,6 +15,7 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_chip_info.h"
+#include "esp_flash.h"
 #include "driver/spi_master.h"
 
 #include "app_config.h"
@@ -36,12 +37,14 @@ static void log_chip(void)
 {
     esp_chip_info_t info;
     esp_chip_info(&info);
+    uint32_t flash_size = 0;
+    esp_flash_get_size(NULL, &flash_size);
     ESP_LOGI(TAG, "ESP32-S3 rev v%d.%d, %d cores, WiFi%s%s, %luMB %s flash",
              info.revision / 100, info.revision % 100,
              info.cores,
              (info.features & CHIP_FEATURE_BT)  ? "/BT"  : "",
              (info.features & CHIP_FEATURE_BLE) ? "/BLE" : "",
-             (unsigned long)spi_flash_get_chip_size() / (1024 * 1024),
+             (unsigned long)flash_size / (1024 * 1024),
              (info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
 }
 
@@ -105,7 +108,10 @@ void app_main(void)
     app_state_init();
 
     fa10t_config_t cfg;
-    nvs_config_load(&cfg);
+    esp_err_t cfg_err = nvs_config_load(&cfg);
+    if (cfg_err == ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGW(TAG, "running with factory defaults (no saved config)");
+    }
     app_state_set_config(&cfg);
 
     // 2. SSR (start in OFF state, before any heat-call path is alive)
