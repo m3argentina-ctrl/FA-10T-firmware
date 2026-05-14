@@ -38,7 +38,9 @@ QueueHandle_t     app_state_sensor_queue(void);
 void              app_state_lock(void);
 void              app_state_unlock(void);
 app_state_t      *app_state_get(void);   // call between lock/unlock
-const fa10t_config_t *app_state_config(void);
+
+// Thread-safe snapshot of the live config into caller-owned storage.
+void              app_state_copy_config(fa10t_config_t *out);
 void              app_state_set_config(const fa10t_config_t *cfg);
 
 #ifdef __cplusplus

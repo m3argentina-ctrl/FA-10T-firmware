@@ -25,7 +25,14 @@ QueueHandle_t app_state_sensor_queue(void) { return s_sensor_q; }
 void app_state_lock(void)                  { xSemaphoreTake(s_mtx, portMAX_DELAY); }
 void app_state_unlock(void)                { xSemaphoreGive(s_mtx); }
 app_state_t *app_state_get(void)           { return &s_state; }
-const fa10t_config_t *app_state_config(void) { return &s_config; }
+
+void app_state_copy_config(fa10t_config_t *out)
+{
+    if (!out) return;
+    app_state_lock();
+    *out = s_config;
+    app_state_unlock();
+}
 
 void app_state_set_config(const fa10t_config_t *cfg)
 {

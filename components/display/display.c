@@ -29,6 +29,7 @@ static lv_disp_draw_buf_t   s_draw_buf;
 static lv_color_t          *s_buf1;
 static lv_color_t          *s_buf2;
 static display_config_t     s_cfg;
+static esp_timer_handle_t   s_lvgl_tick_timer;
 
 static bool on_color_trans_done(esp_lcd_panel_io_handle_t io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {
@@ -137,9 +138,10 @@ esp_err_t display_init(const display_config_t *cfg)
         .callback = lvgl_tick_cb,
         .name     = "lvgl_tick",
     };
-    esp_timer_handle_t tick;
-    esp_timer_create(&tick_args, &tick);
-    esp_timer_start_periodic(tick, LVGL_TICK_PERIOD_MS * 1000);
+    ESP_RETURN_ON_ERROR(esp_timer_create(&tick_args, &s_lvgl_tick_timer),
+                        TAG, "tick timer create");
+    ESP_RETURN_ON_ERROR(esp_timer_start_periodic(s_lvgl_tick_timer, LVGL_TICK_PERIOD_MS * 1000),
+                        TAG, "tick timer start");
 
     if (cfg->gpio_bl >= 0) gpio_set_level(cfg->gpio_bl, 1);
 

@@ -56,8 +56,14 @@
 #define UI_TASK_CORE             0
 
 // --- Safety / runaway -------------------------------------------------------
-#define SAFETY_TEMP_MAX_C        250.0f
-#define SAFETY_RUNAWAY_DT_C        2.0f
-#define SAFETY_RUNAWAY_WINDOW_S   90.0f
-#define SAFETY_RUNAWAY_DUTY_THR    0.40f
-#define SAFETY_WDT_TIMEOUT_S       5
+#define SAFETY_TEMP_MAX_C          250.0f
+#define SAFETY_RUNAWAY_DT_C          2.0f
+#define SAFETY_RUNAWAY_WINDOW_S     90.0f
+#define SAFETY_RUNAWAY_DUTY_THR      0.40f
+#define SAFETY_WDT_TIMEOUT_S         5
+#define SAFETY_HYSTERESIS_C          5.0f   // T must drop this far below limit before clear is allowed
+#define SAFETY_RECOVERY_RAMP_S       8.0f   // soft-start ramp on duty after recovery from a trip
+
+// --- Reset / acknowledge button --------------------------------------------
+#define PIN_BTN_RESET                0      // ESP32-S3 BOOT button
+#define BTN_RESET_HOLD_MS         1500      // must hold this long to confirm a clear

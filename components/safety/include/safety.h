@@ -21,6 +21,8 @@ typedef struct {
     float    runaway_dt_c;      // min ΔT expected in window when calling for heat
     float    runaway_window_s;  // observation window
     float    runaway_duty_thr;  // only evaluate runaway when duty > this (e.g. 0.4)
+    float    hysteresis_c;      // T must drop this much below limit before a clear is accepted
+    float    recovery_ramp_s;   // soft-start ramp duration after a trip (seconds)
     uint32_t wdt_timeout_s;     // task watchdog timeout
 } safety_config_t;
 
@@ -41,7 +43,19 @@ esp_err_t safety_wdt_unsubscribe(void);
 uint32_t safety_evaluate(float temperature, float duty, float dt_s, bool sensor_fault);
 
 uint32_t safety_get_faults(void);
-void     safety_clear_latched(void);
+
+// Operator-confirmed clear of latched faults. Returns true if the clear was
+// accepted. Rejected when temperature is still within hysteresis of the
+// configured limit (caller passes the latest measurement).
+bool     safety_request_clear(float current_temp);
+
+// Returns true exactly once after each recovery (latch cleared and SSR
+// re-enabled). The control loop polls this to reset PID state.
+bool     safety_consume_recovery_event(void);
+
+// Soft-start factor in [0..1] applied by the control loop after a recovery.
+// Returns 1.0 outside of a recovery ramp.
+float    safety_recovery_factor(void);
 
 #ifdef __cplusplus
 }

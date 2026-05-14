@@ -39,7 +39,10 @@ static void control_task(void *arg)
         .derivative_on_measurement = true,
     };
     pid_init(&pid, &init);
-    apply_config_to_pid(&pid, app_state_config());
+
+    fa10t_config_t cfg;
+    app_state_copy_config(&cfg);
+    apply_config_to_pid(&pid, &cfg);
 
     QueueHandle_t q = app_state_sensor_queue();
     uint64_t last_us = esp_timer_get_time();
@@ -48,7 +51,7 @@ static void control_task(void *arg)
 
     while (1) {
         sensor_sample_t sample;
-        if (xQueueReceive(q, &sample, pdMS_TO_TICKS(CONTROL_TASK_PERIOD_MS * 2)) != pdTRUE) {
+        if (xQueueReceive(q, &sample, pdMS_TO_TICKS(CONTROL_TASK_PERIOD_MS + 50)) != pdTRUE) {
             // No fresh sample: treat as sensor fault for safety eval
             sample.fault       = true;
             sample.temperature = 0.0f;
@@ -60,20 +63,36 @@ static void control_task(void *arg)
         if (dt <= 0.0f || dt > 1.0f) dt = (float)CONTROL_TASK_PERIOD_MS / 1000.0f;
         last_us = now_us;
 
-        // Refresh PID setpoint/gains from live config each cycle (cheap)
-        apply_config_to_pid(&pid, app_state_config());
+        // Refresh PID setpoint/gains from a thread-safe snapshot of the config.
+        app_state_copy_config(&cfg);
+        apply_config_to_pid(&pid, &cfg);
 
-        float out = pid_compute(&pid, sample.temperature, dt);
+        // PID first, then fault override (avoids divergent integral on faults).
+        float out;
         if (sample.fault) {
-            out = 0.0f;
             pid_reset(&pid);
+            out = 0.0f;
+        } else {
+            out = pid_compute(&pid, sample.temperature, dt);
         }
 
         uint32_t faults = safety_evaluate(sample.temperature, out, dt, sample.fault);
+
+        // After a recovery (manual ack or transient sensor fault clearing),
+        // reset PID state once so we don't dump accumulated integral into a
+        // freshly re-armed heater.
+        if (safety_consume_recovery_event()) {
+            pid_reset(&pid);
+            ESP_LOGI(TAG, "PID reset after safety recovery");
+        }
+
+        float duty_out;
         if (faults != 0) {
-            out = 0.0f;
+            duty_out = 0.0f;
         } else {
-            ssr_driver_set_duty(out);
+            // Apply soft-start ramp during recovery window.
+            duty_out = out * safety_recovery_factor();
+            ssr_driver_set_duty(duty_out);
         }
 
         // Publish to shared state
@@ -82,7 +101,7 @@ static void control_task(void *arg)
         st->pid_output    = out;
         st->ssr_duty      = ssr_driver_get_duty();
         st->safety_faults = faults;
-        st->setpoint      = app_state_config()->setpoint;
+        st->setpoint      = cfg.setpoint;
         st->running       = (faults == 0);
         app_state_unlock();
 

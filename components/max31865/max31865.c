@@ -27,22 +27,27 @@ static esp_err_t reg_write(max31865_handle_t h, uint8_t reg, uint8_t val)
     return spi_device_transmit(h->spi, &t);
 }
 
+// MAX31865 read protocol requires CS to remain asserted across the address
+// byte and the data clock-out. Splitting that into two spi_device_*_transmit()
+// calls deasserts CS in between and the chip returns garbage. Pack everything
+// into a single transaction so CS is held for the whole exchange.
+#define MAX31865_RD_BUF_MAX 9   // 1 addr + up to 8 data bytes (covers all chip regs)
+
 static esp_err_t reg_read(max31865_handle_t h, uint8_t reg, uint8_t *buf, size_t len)
 {
-    uint8_t addr = reg & 0x7F;
-    spi_transaction_t t_addr = {
-        .length    = 8,
-        .tx_buffer = &addr,
-    };
-    esp_err_t err = spi_device_polling_transmit(h->spi, &t_addr);
-    if (err != ESP_OK) return err;
+    if (len == 0 || len > (MAX31865_RD_BUF_MAX - 1)) return ESP_ERR_INVALID_ARG;
 
-    spi_transaction_t t_data = {
-        .length    = len * 8,
-        .rxlength  = len * 8,
-        .rx_buffer = buf,
+    uint8_t tx[MAX31865_RD_BUF_MAX] = { (uint8_t)(reg & 0x7F) };
+    uint8_t rx[MAX31865_RD_BUF_MAX] = {0};
+    spi_transaction_t t = {
+        .length    = (1 + len) * 8,
+        .rxlength  = (1 + len) * 8,
+        .tx_buffer = tx,
+        .rx_buffer = rx,
     };
-    return spi_device_polling_transmit(h->spi, &t_data);
+    esp_err_t err = spi_device_polling_transmit(h->spi, &t);
+    if (err == ESP_OK) memcpy(buf, &rx[1], len);
+    return err;
 }
 
 static esp_err_t apply_config(max31865_handle_t h)

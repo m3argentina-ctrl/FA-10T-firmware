@@ -30,8 +30,9 @@ static void sensor_task(void *arg)
             .raw_temperature = r.temperature,
         };
 
-        const fa10t_config_t *cfg = app_state_config();
-        sample.temperature = cfg->cal_gain * r.temperature + cfg->cal_offset;
+        fa10t_config_t cfg;
+        app_state_copy_config(&cfg);
+        sample.temperature = cfg.cal_gain * r.temperature + cfg.cal_offset;
 
         if (xQueueSend(q, &sample, 0) != pdTRUE) {
             // Control task is keeping up — drop oldest to avoid stale data

@@ -77,7 +77,9 @@ float pid_compute(pid_t *pid, float input, float dt)
 
     if (!windup_block) {
         pid->integral += pid->params.ki * error * dt;
-        pid->integral  = clampf(pid->integral, pid->params.out_min, pid->params.out_max);
+        // Conditional anti-windup above keeps the integral bounded; clamping
+        // it to the output range here would over-restrict it for setups where
+        // I must compensate for a small Kp.
     }
     const float I = pid->integral;
 

@@ -130,6 +130,8 @@ void app_main(void)
         .runaway_dt_c     = cfg.runaway_dt_c     > 0 ? cfg.runaway_dt_c     : SAFETY_RUNAWAY_DT_C,
         .runaway_window_s = cfg.runaway_window_s > 0 ? cfg.runaway_window_s : SAFETY_RUNAWAY_WINDOW_S,
         .runaway_duty_thr = SAFETY_RUNAWAY_DUTY_THR,
+        .hysteresis_c     = SAFETY_HYSTERESIS_C,
+        .recovery_ramp_s  = SAFETY_RECOVERY_RAMP_S,
         .wdt_timeout_s    = SAFETY_WDT_TIMEOUT_S,
     };
     ESP_ERROR_CHECK(safety_init(&sc));
