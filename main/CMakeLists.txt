@@ -1,0 +1,24 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "app_state.c"
+        "tasks/sensor_task.c"
+        "tasks/control_task.c"
+        "tasks/ui_task.c"
+        "tasks/watchdog_task.c"
+    INCLUDE_DIRS
+        "."
+        "tasks"
+    REQUIRES
+        max31865
+        pid_controller
+        ssr_driver
+        display
+        nvs_config
+        safety
+        driver
+        esp_timer
+        log
+        nvs_flash
+        esp_lcd
+)

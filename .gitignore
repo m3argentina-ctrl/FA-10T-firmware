@@ -1,0 +1,33 @@
+# ESP-IDF
+build/
+sdkconfig
+sdkconfig.old
+sdkconfig.ci
+managed_components/
+dependencies.lock
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs / temp
+*.log
+*.tmp
+*.bak
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Keep Claude project metadata local
+.claude/

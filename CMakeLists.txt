@@ -1,0 +1,10 @@
+# FA-10T v3.0 — Industrial Thermal Controller
+# Target: ESP32-S3
+# Build system: ESP-IDF
+
+cmake_minimum_required(VERSION 3.16)
+
+set(EXTRA_COMPONENT_DIRS "components")
+
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+project(fa10t_firmware)
