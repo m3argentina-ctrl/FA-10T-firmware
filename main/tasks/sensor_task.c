@@ -11,6 +11,9 @@
 
 static const char *TAG = "sensor_task";
 
+static TaskHandle_t s_handle;
+TaskHandle_t sensor_task_handle(void) { return s_handle; }
+
 static void sensor_task(void *arg)
 {
     max31865_handle_t rtd = (max31865_handle_t)arg;
@@ -57,6 +60,6 @@ void sensor_task_start(max31865_handle_t rtd)
 {
     xTaskCreatePinnedToCore(sensor_task, "sensor",
                             SENSOR_TASK_STACK, rtd,
-                            SENSOR_TASK_PRIO, NULL,
+                            SENSOR_TASK_PRIO, &s_handle,
                             SENSOR_TASK_CORE);
 }

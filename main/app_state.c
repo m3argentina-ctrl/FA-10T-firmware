@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include "esp_log.h"
+#include "esp_system.h"
 
 static const char *TAG = "app_state";
 
@@ -18,8 +19,8 @@ void app_state_init(void)
     // loop) on the freshest sample without the racy drop-then-resend pattern.
     s_sensor_q = xQueueCreate(1, sizeof(sensor_sample_t));
     if (!s_mtx || !s_sensor_q) {
-        ESP_LOGE(TAG, "primitives alloc failed");
-        abort();
+        ESP_LOGE(TAG, "primitives alloc failed (mtx=%p q=%p), restarting", s_mtx, s_sensor_q);
+        esp_restart();
     }
 }
 

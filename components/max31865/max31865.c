@@ -118,14 +118,6 @@ esp_err_t max31865_deinit(max31865_handle_t h)
     return ESP_OK;
 }
 
-esp_err_t max31865_set_bias(max31865_handle_t h, bool enable)
-{
-    if (!h) return ESP_ERR_INVALID_ARG;
-    if (enable) h->config_reg |=  MAX31865_CFG_VBIAS;
-    else        h->config_reg &= ~MAX31865_CFG_VBIAS;
-    return reg_write(h, MAX31865_REG_CONFIG, h->config_reg);
-}
-
 esp_err_t max31865_clear_fault(max31865_handle_t h)
 {
     if (!h) return ESP_ERR_INVALID_ARG;

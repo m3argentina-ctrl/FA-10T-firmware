@@ -69,22 +69,31 @@ float pid_compute(pid_t *pid, float input, float dt)
         : d_raw;
     const float D = pid->params.kd * d_filt;
 
-    // ------ Integral with conditional anti-windup ------
-    // Only integrate when not pushing further into saturation in the same direction
-    bool windup_block = pid->saturated &&
-        ((pid->output >= pid->params.out_max && error > 0.0f) ||
-         (pid->output <= pid->params.out_min && error < 0.0f));
-
-    if (!windup_block) {
+    // ------ Integral with anti-windup ------
+    // Two strategies, selected by params.kt:
+    //   kt > 0  → back-calculation (smooth, preferred)
+    //   kt == 0 → conditional integration (legacy fallback)
+    if (pid->params.kt > 0.0f) {
         pid->integral += pid->params.ki * error * dt;
-        // Conditional anti-windup above keeps the integral bounded; clamping
-        // it to the output range here would over-restrict it for setups where
-        // I must compensate for a small Kp.
+    } else {
+        bool windup_block = pid->saturated &&
+            ((pid->output >= pid->params.out_max && error > 0.0f) ||
+             (pid->output <= pid->params.out_min && error < 0.0f));
+        if (!windup_block) {
+            pid->integral += pid->params.ki * error * dt;
+        }
     }
     const float I = pid->integral;
 
     float out = P + I + D;
     const float clamped = clampf(out, pid->params.out_min, pid->params.out_max);
+
+    // Back-calculation correction: bleed accumulated integral when saturated
+    // in proportion to how much of the requested output was thrown away.
+    if (pid->params.kt > 0.0f && clamped != out) {
+        pid->integral += pid->params.kt * (clamped - out) * dt;
+    }
+
     pid->saturated = (clamped != out);
     pid->output    = clamped;
 

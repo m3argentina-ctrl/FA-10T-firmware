@@ -112,7 +112,7 @@ esp_err_t display_init(const display_config_t *cfg)
 
     esp_lcd_panel_reset(s_panel);
     esp_lcd_panel_init(s_panel);
-    esp_lcd_panel_invert_color(s_panel, true);
+    esp_lcd_panel_invert_color(s_panel, cfg->invert_color);
     esp_lcd_panel_swap_xy(s_panel, cfg->swap_xy);
     esp_lcd_panel_mirror(s_panel, cfg->mirror_x, cfg->mirror_y);
     esp_lcd_panel_disp_on_off(s_panel, true);
@@ -145,8 +145,13 @@ esp_err_t display_init(const display_config_t *cfg)
     ESP_RETURN_ON_ERROR(esp_timer_start_periodic(s_lvgl_tick_timer, LVGL_TICK_PERIOD_MS * 1000),
                         TAG, "tick timer start");
 
-    if (cfg->gpio_bl >= 0) gpio_set_level(cfg->gpio_bl, 1);
-
+    // Backlight stays OFF here. ui_task turns it on after the first flush.
     ESP_LOGI(TAG, "Display initialised %dx%d", cfg->hres, cfg->vres);
     return ESP_OK;
+}
+
+void display_set_backlight(bool on)
+{
+    if (s_cfg.gpio_bl < 0) return;
+    gpio_set_level(s_cfg.gpio_bl, on ? 1 : 0);
 }

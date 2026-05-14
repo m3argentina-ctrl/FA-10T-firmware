@@ -13,6 +13,9 @@
 
 static const char *TAG = "control_task";
 
+static TaskHandle_t s_handle;
+TaskHandle_t control_task_handle(void) { return s_handle; }
+
 static void apply_config_to_pid(pid_t *pid, const fa10t_config_t *cfg)
 {
     pid_params_t p = {
@@ -23,6 +26,7 @@ static void apply_config_to_pid(pid_t *pid, const fa10t_config_t *cfg)
         .out_max = 1.0f,
         .d_filter_alpha = 0.85f,
         .derivative_on_measurement = true,
+        .kt = cfg->ki,   // back-calculation gain ≈ ki for PI-dominant tuning
     };
     pid_set_params(pid, &p);
     pid_set_setpoint(pid, cfg->setpoint);
@@ -37,6 +41,7 @@ static void control_task(void *arg)
         .out_min = 0.0f, .out_max = 1.0f,
         .d_filter_alpha = 0.85f,
         .derivative_on_measurement = true,
+        .kt = 0.15f,
     };
     pid_init(&pid, &init);
 
@@ -86,8 +91,9 @@ static void control_task(void *arg)
             ESP_LOGI(TAG, "PID reset after safety recovery");
         }
 
+        const bool tripped = (faults & SAFETY_TRIP_MASK) != 0;
         float duty_out;
-        if (faults != 0) {
+        if (tripped) {
             duty_out = 0.0f;
         } else {
             // Apply soft-start ramp during recovery window.
@@ -102,7 +108,7 @@ static void control_task(void *arg)
         st->ssr_duty      = ssr_driver_get_duty();
         st->safety_faults = faults;
         st->setpoint      = cfg.setpoint;
-        st->running       = (faults == 0);
+        st->running       = !tripped;
         app_state_unlock();
 
         safety_wdt_feed();
@@ -113,6 +119,6 @@ void control_task_start(void)
 {
     xTaskCreatePinnedToCore(control_task, "control",
                             CONTROL_TASK_STACK, NULL,
-                            CONTROL_TASK_PRIO, NULL,
+                            CONTROL_TASK_PRIO, &s_handle,
                             CONTROL_TASK_CORE);
 }

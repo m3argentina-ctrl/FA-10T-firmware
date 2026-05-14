@@ -23,6 +23,7 @@ typedef struct {
     bool swap_xy;
     bool mirror_x;
     bool mirror_y;
+    bool invert_color;   // ST7789 INVON; flip if colors look wrong on the panel
 } display_config_t;
 
 // Data shown on the main HMI screen.
@@ -45,6 +46,10 @@ void display_build_main_screen(void);
 
 // Push fresh status data into the UI (thread-safe wrapper).
 void display_update_status(const display_status_t *st);
+
+// Drive the backlight GPIO (no-op if gpio_bl < 0). Called from ui_task
+// after the first frame is flushed to avoid showing uninitialised pixels.
+void display_set_backlight(bool on);
 
 #ifdef __cplusplus
 }

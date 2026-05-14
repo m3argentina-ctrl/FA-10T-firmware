@@ -10,11 +10,18 @@ extern "C" {
 
 typedef enum {
     SAFETY_OK            = 0,
+    // Trip bits — SSR is forced OFF when any of these is set.
     SAFETY_OVERTEMP      = 1 << 0,
     SAFETY_SENSOR_FAULT  = 1 << 1,
     SAFETY_RUNAWAY       = 1 << 2,
     SAFETY_WDT_TIMEOUT   = 1 << 3,
+    // Warning bits — diagnostic only, do NOT cut the SSR. The UI/logs can use
+    // these to flag conditions that warrant attention but are not yet faults.
+    SAFETY_WARN_NEAR_LIMIT = 1 << 8,   // T within hysteresis of temp_max_c
 } safety_fault_t;
+
+#define SAFETY_TRIP_MASK   (SAFETY_OVERTEMP | SAFETY_SENSOR_FAULT | SAFETY_RUNAWAY | SAFETY_WDT_TIMEOUT)
+#define SAFETY_WARN_MASK   (SAFETY_WARN_NEAR_LIMIT)
 
 typedef struct {
     float    temp_max_c;        // hard upper limit

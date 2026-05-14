@@ -94,6 +94,7 @@ static esp_err_t init_display(void)
         .swap_xy        = false,
         .mirror_x       = false,
         .mirror_y       = false,
+        .invert_color   = TFT_INVERT_COLOR,
     };
     return display_init(&cfg);
 }

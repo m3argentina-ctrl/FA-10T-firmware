@@ -100,6 +100,11 @@ uint32_t safety_evaluate(float temperature, float duty, float dt_s, bool sensor_
 
     if (!sensor_fault && temperature > s.cfg.temp_max_c) {
         trip(SAFETY_OVERTEMP, "over-temperature", true);
+    } else if (!sensor_fault &&
+               temperature >= (s.cfg.temp_max_c - s.cfg.hysteresis_c)) {
+        // Within the hysteresis band of the limit — flag for diagnostics
+        // without cutting the SSR.
+        s.faults |= SAFETY_WARN_NEAR_LIMIT;
     }
 
     // Thermal runaway: while calling for substantial heat, ΔT must rise enough
@@ -126,9 +131,11 @@ uint32_t safety_evaluate(float temperature, float duty, float dt_s, bool sensor_
         s.runaway_armed = false;
     }
 
-    // Auto-recovery only when nothing is currently faulted AND nothing is
-    // latched. Latched faults need an explicit clear via safety_request_clear().
-    if (s.faults == 0 && s.latched == 0 && !ssr_driver_is_enabled()) {
+    // Auto-recovery only when no TRIP bits are currently set or latched.
+    // Warnings (NEAR_LIMIT etc.) are diagnostics and do not block recovery.
+    if ((s.faults & SAFETY_TRIP_MASK) == 0 &&
+        (s.latched & SAFETY_TRIP_MASK) == 0 &&
+        !ssr_driver_is_enabled()) {
         start_recovery_ramp();
     }
 

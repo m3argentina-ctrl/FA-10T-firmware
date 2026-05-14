@@ -9,8 +9,40 @@
 #include "app_config.h"
 #include "app_state.h"
 #include "safety.h"
+#include "tasks/sensor_task.h"
+#include "tasks/control_task.h"
+#include "tasks/ui_task.h"
 
 static const char *TAG = "watchdog_task";
+
+static TaskHandle_t s_handle;
+TaskHandle_t watchdog_task_handle(void) { return s_handle; }
+
+// Log stack high-water marks for every monitored task. Called every N ticks
+// from the watchdog loop so the operator can spot stack pressure before a
+// stack overflow panics the system. Reported value is the smallest free stack
+// (in WORDS, not bytes) ever observed.
+static void log_stack_usage(void)
+{
+    const struct {
+        const char  *name;
+        TaskHandle_t (*get)(void);
+    } tasks[] = {
+        { "sensor",  sensor_task_handle  },
+        { "control", control_task_handle },
+        { "ui",      ui_task_handle      },
+        { "wdog",    watchdog_task_handle },
+    };
+    for (size_t i = 0; i < sizeof(tasks) / sizeof(tasks[0]); ++i) {
+        TaskHandle_t h = tasks[i].get();
+        if (!h) continue;
+        UBaseType_t hwm_words = uxTaskGetStackHighWaterMark(h);
+        ESP_LOGI(TAG, "stack hwm %-7s = %u words (%u bytes)",
+                 tasks[i].name,
+                 (unsigned)hwm_words,
+                 (unsigned)(hwm_words * sizeof(StackType_t)));
+    }
+}
 
 static void reset_button_init(void)
 {
@@ -54,6 +86,10 @@ static void watchdog_task(void *arg)
     reset_button_init();
 
     const uint64_t t0 = esp_timer_get_time();
+    // Log stack usage every ~30s. Period is WATCHDOG_TASK_PERIOD_MS (=500),
+    // so 60 ticks ≈ 30s.
+    const uint32_t stack_log_every = (30 * 1000) / WATCHDOG_TASK_PERIOD_MS;
+    uint32_t stack_log_counter = 0;
 
     while (1) {
         // Snapshot everything we need under the lock; never dereference the
@@ -78,11 +114,19 @@ static void watchdog_task(void *arg)
             safety_evaluate(0.0f, 0.0f, 0.0f, true);
         }
 
-        if (faults != 0) {
-            ESP_LOGW(TAG, "active faults: 0x%02lX", (unsigned long)faults);
+        if (faults & SAFETY_TRIP_MASK) {
+            ESP_LOGW(TAG, "active TRIP faults: 0x%04lX", (unsigned long)(faults & SAFETY_TRIP_MASK));
+        }
+        if (faults & SAFETY_WARN_MASK) {
+            ESP_LOGW(TAG, "warnings: 0x%04lX", (unsigned long)(faults & SAFETY_WARN_MASK));
         }
 
         poll_reset_button(last_temp);
+
+        if (++stack_log_counter >= stack_log_every) {
+            stack_log_counter = 0;
+            log_stack_usage();
+        }
 
         safety_wdt_feed();
         vTaskDelay(pdMS_TO_TICKS(WATCHDOG_TASK_PERIOD_MS));
@@ -93,6 +137,6 @@ void watchdog_task_start(void)
 {
     xTaskCreatePinnedToCore(watchdog_task, "wdog",
                             WATCHDOG_TASK_STACK, NULL,
-                            WATCHDOG_TASK_PRIO, NULL,
+                            WATCHDOG_TASK_PRIO, &s_handle,
                             WATCHDOG_TASK_CORE);
 }

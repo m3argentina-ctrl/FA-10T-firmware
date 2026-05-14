@@ -26,7 +26,7 @@ static ssr_state_t s_ssr;
 
 static void set_gpio(bool on)
 {
-    int level = on ^ !s_ssr.cfg.active_high ? 1 : 0;
+    const int level = (on == s_ssr.cfg.active_high) ? 1 : 0;
     gpio_set_level(s_ssr.cfg.gpio, level);
     s_ssr.state_on = on;
 }

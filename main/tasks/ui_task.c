@@ -13,16 +13,27 @@
 
 static const char *TAG = "ui_task";
 
+static TaskHandle_t s_handle;
+TaskHandle_t ui_task_handle(void) { return s_handle; }
+
 static void ui_task(void *arg)
 {
     (void)arg;
     display_build_main_screen();
 
+    bool backlight_on = false;
     uint32_t status_counter = 0;
     while (1) {
         if (display_lvgl_lock(20) == ESP_OK) {
             lv_timer_handler();
             display_lvgl_unlock();
+        }
+
+        if (!backlight_on) {
+            // First lv_timer_handler() above issued the initial flush;
+            // safe to power the backlight now without showing garbage.
+            display_set_backlight(true);
+            backlight_on = true;
         }
 
         // Refresh status text/bar at ~5 Hz to avoid label thrashing
@@ -36,7 +47,7 @@ static void ui_task(void *arg)
             st.ssr_duty       = as->ssr_duty;
             st.sensor_fault   = as->last_sample.fault;
             st.runaway        = (as->safety_faults & SAFETY_RUNAWAY) != 0;
-            st.safety_tripped = (as->safety_faults != 0);
+            st.safety_tripped = (as->safety_faults & SAFETY_TRIP_MASK) != 0;
             st.uptime_s       = as->uptime_s;
             app_state_unlock();
             display_update_status(&st);
@@ -50,7 +61,7 @@ void ui_task_start(void)
 {
     xTaskCreatePinnedToCore(ui_task, "ui",
                             UI_TASK_STACK, NULL,
-                            UI_TASK_PRIO, NULL,
+                            UI_TASK_PRIO, &s_handle,
                             UI_TASK_CORE);
     ESP_LOGI(TAG, "UI task started");
 }

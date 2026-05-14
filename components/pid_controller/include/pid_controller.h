@@ -17,6 +17,13 @@ typedef struct {
 
     float d_filter_alpha;   // 0..1, low-pass on derivative (0 = no filter, 1 = freeze)
     bool  derivative_on_measurement; // true to avoid derivative kick on setpoint changes
+
+    // Anti-windup back-calculation gain. When > 0, the integral is corrected
+    // by kt * (clamped - unclamped) * dt every cycle (smooth, no integration
+    // discontinuity). When 0, falls back to conditional integration (only
+    // integrate while the loop is not pushing further into saturation).
+    // Typical default for PI: kt = ki; for PID: kt ≈ 1/sqrt(Ti*Td).
+    float kt;
 } pid_params_t;
 
 typedef struct {

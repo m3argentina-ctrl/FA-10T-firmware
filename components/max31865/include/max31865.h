@@ -68,9 +68,6 @@ esp_err_t max31865_deinit(max31865_handle_t handle);
 esp_err_t max31865_read(max31865_handle_t handle, max31865_reading_t *out);
 esp_err_t max31865_clear_fault(max31865_handle_t handle);
 
-// Set bias on/off (off in idle to reduce RTD self-heating)
-esp_err_t max31865_set_bias(max31865_handle_t handle, bool enable);
-
 // Convert RTD resistance (ohms) to temperature (°C) using Callendar-Van Dusen
 float max31865_resistance_to_temperature(float r_ohms, float r0_ohms);
 

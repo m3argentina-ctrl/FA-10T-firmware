@@ -14,6 +14,10 @@
 #define RTD_NOMINAL_OHMS     1000.0f   // PT1000
 
 // --- SSR --------------------------------------------------------------------
+// NOTE: PIN_SSR must have an external pull-down (10kΩ) on the PCB so the SSR
+// stays OFF during ESP32 power-on / reset / firmware upload, before
+// gpio_config() drives the line. Without it, the line floats and the SSR may
+// turn on briefly during boot.
 #define PIN_SSR              21
 #define SSR_PERIOD_MS        1000
 #define SSR_ACTIVE_HIGH      true
@@ -30,6 +34,9 @@
 #define TFT_HRES             240
 #define TFT_VRES             320
 #define TFT_PIXEL_CLOCK_HZ   (40 * 1000 * 1000)
+// Some ST7789 batches need pixel-value inversion. Flip this if colors look
+// inverted during board bring-up.
+#define TFT_INVERT_COLOR     true
 
 // --- Task periods (ms) ------------------------------------------------------
 #define SENSOR_TASK_PERIOD_MS    100   // 10 Hz
