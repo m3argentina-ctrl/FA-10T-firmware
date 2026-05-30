@@ -2,7 +2,11 @@
 # Name,     Type, SubType,  Offset,   Size,    Flags
 nvs,        data, nvs,      0x9000,   0x6000,
 phy_init,   data, phy,      0xf000,   0x1000,
-factory,    app,  factory,  0x10000,  0x300000,
-ota_0,      app,  ota_0,    ,         0x300000,
+ota_0,      app,  ota_0,    0x10000,  0x300000,
 ota_1,      app,  ota_1,    ,         0x300000,
 storage,    data, spiffs,   ,         0x100000,
+# Identidad de fábrica (dev_id/token/cloud_url). Se pre-carga por equipo al
+# flashear y NO se toca al borrar config/WiFi. Va al final para no correr los
+# offsets de ota_0/ota_1/storage (los equipos ya flasheados sólo necesitan
+# re-grabar la tabla + esta región nueva).
+factory,    data, nvs,      ,         0x4000,

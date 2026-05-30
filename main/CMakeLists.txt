@@ -2,6 +2,43 @@ idf_component_register(
     SRCS
         "main.c"
         "app_state.c"
+        "pt1000_adc.c"
+        "acs712.c"
+        "sht31.c"
+        "ssr3ch.c"
+        "safety.c"
+        "display.c"
+        "modo_manual.c"
+        "programa.c"
+        "telemetry.c"
+        "recovery.c"
+        "audio.c"
+        "gpio_test.c"
+        "wifi_manager.c"
+        "ble_monitor.c"
+        "web_server.c"
+        "cloud_telemetry.c"
+        "screens/ui_common.c"
+        "screens/ui_keyboard.c"
+        "screens/recovery_prompt.c"
+        "screens/wifi_config.c"
+        "screens/img/isologo_64.c"
+        "screens/img/logo_300.c"
+        "screens/fonts/font_montserrat_bold_10.c"
+        "screens/fonts/font_montserrat_bold_12.c"
+        "screens/fonts/font_montserrat_bold_14.c"
+        "screens/fonts/font_montserrat_bold_18.c"
+        "screens/screen_splash.c"
+        "screens/screen_inicio.c"
+        "screens/screen_prog_manual.c"
+        "screens/screen_func_manual.c"
+        "screens/screen_prog_select.c"
+        "screens/screen_prog_stage.c"
+        "screens/screen_prog_resumen.c"
+        "screens/prog_wizard.c"
+        "screens/screen_func_programas.c"
+        "screens/screen_tecnica.c"
+        "screens/screen_alarma.c"
         "tasks/sensor_task.c"
         "tasks/control_task.c"
         "tasks/ui_task.c"
@@ -9,16 +46,34 @@ idf_component_register(
     INCLUDE_DIRS
         "."
         "tasks"
+        "screens"
     REQUIRES
-        max31865
         pid_controller
-        ssr_driver
-        display
         nvs_config
-        safety
-        driver
+        esp_driver_gpio
+        esp_driver_i2c
+        esp_driver_i2s
+        esp_driver_spi
+        esp_driver_ledc
+        esp_adc
+        esp_lcd
         esp_timer
+        esp_hw_support
+        esp_system
         log
         nvs_flash
-        esp_lcd
+        spi_flash
+        # Comunicaciones fase 4 — sólo se usan si WIFI_ENABLED/BLE_ENABLED en
+        # app_config.h. Listadas siempre porque ESP-IDF v6 valida la lista al
+        # parsear includes, no en tiempo de link.
+        esp_wifi
+        esp_event
+        esp_netif
+        esp_http_server
+        esp_http_client
+        esp-tls
+        mbedtls
+        bt
+    EMBED_TXTFILES
+        "web/dashboard.html"
 )

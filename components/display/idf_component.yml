@@ -1,8 +1,0 @@
-## Display component dependencies
-##   - LVGL graphics library
-##   - esp_lcd panel drivers (built into ESP-IDF)
-
-dependencies:
-  idf:
-    version: ">=5.1"
-  lvgl/lvgl: "^8.3.0"

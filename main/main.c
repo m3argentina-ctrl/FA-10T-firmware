@@ -1,12 +1,14 @@
-// FA-10T v3.0 — Industrial Thermal Controller (ESP32-S3)
+// FA-10T v3.0 — Industrial Thermal Controller (ESP32-S3, Waveshare 3.5" LCD)
 //
 // Boot sequence:
 //   1. NVS init + load config
-//   2. SSR driver (idle off)
-//   3. MAX31865 SPI bus + device
-//   4. Display + LVGL
-//   5. Safety subsystem (TWDT + runaway)
-//   6. Start FreeRTOS tasks: sensor, control, ui, watchdog
+//   2. SSR 3-channel driver (all OFF)
+//   3. PT1000 ADC + calibration
+//   4. ACS712 current sensor
+//   5. SHT31 humidity (also brings up the shared I2C bus)
+//   6. Safety subsystem (TWDT + runaway + fan fault)
+//   7. Pulse fans on, wait 3 s, learn nominal current, mark ready
+//   8. Start FreeRTOS tasks (sensor, control, ui, watchdog)
 
 #include <stdio.h>
 
@@ -16,20 +18,29 @@
 #include "esp_system.h"
 #include "esp_chip_info.h"
 #include "esp_flash.h"
-#include "driver/spi_master.h"
+#include "nvs.h"
 
 #include "app_config.h"
 #include "app_state.h"
 #include "nvs_config.h"
-#include "max31865.h"
-#include "ssr_driver.h"
-#include "display.h"
+#include "pt1000_adc.h"
+#include "acs712.h"
+#include "sht31.h"
+#include "ssr3ch.h"
 #include "safety.h"
+#include "telemetry.h"
+#include "recovery.h"
+#include "programa.h"
+#include "wifi_manager.h"
+#include "web_server.h"
+#include "cloud_telemetry.h"
 
 #include "tasks/sensor_task.h"
 #include "tasks/control_task.h"
 #include "tasks/ui_task.h"
 #include "tasks/watchdog_task.h"
+
+#include "gpio_test.h"
 
 static const char *TAG = "main";
 
@@ -48,63 +59,59 @@ static void log_chip(void)
              (info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
 }
 
-static esp_err_t init_rtd_bus_and_device(max31865_handle_t *out)
+// --- Helpers referenced by simulation-mode drivers --------------------------
+// pt1000_adc.c & acs712.c declare these as extern. Kept here so the sim path
+// does not need to include app_state.h directly.
+float app_setpoint_for_sim(void)
 {
-    spi_bus_config_t bus = {
-        .mosi_io_num     = PIN_RTD_MOSI,
-        .miso_io_num     = PIN_RTD_MISO,
-        .sclk_io_num     = PIN_RTD_SCLK,
-        .quadwp_io_num   = -1,
-        .quadhd_io_num   = -1,
-        .max_transfer_sz = 32,
-    };
-    esp_err_t err = spi_bus_initialize(PIN_RTD_SPI_HOST, &bus, SPI_DMA_DISABLED);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "RTD spi_bus_initialize: %s", esp_err_to_name(err));
-        return err;
-    }
-
-    max31865_config_t cfg = {
-        .host           = PIN_RTD_SPI_HOST,
-        .gpio_cs        = PIN_RTD_CS,
-        .gpio_drdy      = PIN_RTD_DRDY,
-        .clock_speed_hz = 2 * 1000 * 1000,
-        .r_ref_ohms     = RTD_REF_OHMS,
-        .r_nominal_ohms = RTD_NOMINAL_OHMS,
-        .wiring         = MAX31865_WIRE_3,
-        .filter         = MAX31865_FILTER_50HZ,
-    };
-    return max31865_init(&cfg, out);
+    // La planta simulada tiende hacia el setpoint efectivo SOLO mientras hay
+    // una sesión activa (fan_command_on=true). En reposo tiende a 25 °C de
+    // ambiente — si no, la T subiría hacia el setpoint guardado y dispararía
+    // SAFETY_RUNAWAY (5 °C / 60 s sin duty SSR).
+    app_state_lock();
+    const app_state_t *s = app_state_get();
+    float sp = s->fan_command_on ? s->effective_setpoint : 25.0f;
+    app_state_unlock();
+    return sp;
 }
 
-static esp_err_t init_display(void)
+bool app_fan_is_on_for_sim(void)
 {
-    display_config_t cfg = {
-        .spi_host       = PIN_TFT_SPI_HOST,
-        .gpio_mosi      = PIN_TFT_MOSI,
-        .gpio_miso      = PIN_TFT_MISO,
-        .gpio_sclk      = PIN_TFT_SCLK,
-        .gpio_cs        = PIN_TFT_CS,
-        .gpio_dc        = PIN_TFT_DC,
-        .gpio_rst       = PIN_TFT_RST,
-        .gpio_bl        = PIN_TFT_BL,
-        .pixel_clock_hz = TFT_PIXEL_CLOCK_HZ,
-        .hres           = TFT_HRES,
-        .vres           = TFT_VRES,
-        .swap_xy        = false,
-        .mirror_x       = false,
-        .mirror_y       = false,
-        .invert_color   = TFT_INVERT_COLOR,
-    };
-    return display_init(&cfg);
+    app_state_lock();
+    bool on = app_state_get()->ssr_fan_duty > 0.1f;
+    app_state_unlock();
+    return on;
+}
+
+// Duty actual del SSR_DRV (0..1). El sim del PT1000 lo usa para decidir si
+// la T debe subir (heater ON) o bajar hacia ambiente (heater OFF). Sin esto,
+// la T sube siempre y se dispara SAFETY_RUNAWAY cuando el PID corta duty.
+float app_drv_duty_for_sim(void)
+{
+    app_state_lock();
+    float d = app_state_get()->ssr_drv_duty;
+    app_state_unlock();
+    return d;
 }
 
 void app_main(void)
 {
     log_chip();
-    ESP_LOGI(TAG, "FA-10T v3.0 firmware boot");
 
-    // 1. NVS + config
+#if GPIO_TEST_MODE
+    // Modo de calibración de pinout: ciclar GPIOs del header J8 e imprimir
+    // qué pin está activo. NO se inicializa el resto del firmware. Volver a
+    // GPIO_TEST_MODE=0 en app_config.h cuando el pinout esté confirmado.
+    ESP_LOGW(TAG, "FA-10T BOOT EN MODO TEST DE PINOUT — firmware normal omitido");
+    gpio_test_loop();   // nunca retorna
+    return;
+#endif
+
+    ESP_LOGI(TAG, "FA-10T v3.0 firmware boot%s%s",
+             SIMULATION_MODE   ? " [SIMULATION]"      : "",
+             SENSORS_SIMULATION ? " [SENSORS-SIM]"     : "");
+
+    // 1. NVS + config + telemetry / recovery / programs (all NVS-backed)
     ESP_ERROR_CHECK(nvs_config_init());
     app_state_init();
 
@@ -115,27 +122,34 @@ void app_main(void)
     }
     app_state_set_config(&cfg);
 
-    // 2. SSR (start in OFF state, before any heat-call path is alive)
-    ssr_driver_config_t ssr_cfg = {
-        .gpio        = PIN_SSR,
-        .period_ms   = cfg.ssr_period_ms ? cfg.ssr_period_ms : SSR_PERIOD_MS,
-        .active_high = SSR_ACTIVE_HIGH,
-    };
-    ESP_ERROR_CHECK(ssr_driver_init(&ssr_cfg));
-    ssr_driver_set_duty(0.0f);
+    telemetry_init();
+    recovery_init();
+    programa_init();
 
-    // 3. RTD
-    max31865_handle_t rtd = NULL;
-    ESP_ERROR_CHECK(init_rtd_bus_and_device(&rtd));
+    // 2. SSR 3-channel (force-clamp to OFF before any other init can race)
+    ESP_ERROR_CHECK(ssr3ch_init());
+    ssr3ch_set_duty(SSR_CH_DRV, 0.0f);
+    ssr3ch_set_duty(SSR_CH_FAN, 0.0f);
+    ssr3ch_set_duty(SSR_CH_AUX, 0.0f);
 
-    // 4. Display + LVGL
-    ESP_ERROR_CHECK(init_display());
+    // 3. PT1000 ADC
+    ESP_ERROR_CHECK(pt1000_adc_init());
 
-    // 5. Safety
+    // 4. ACS712 current sensor
+    ESP_ERROR_CHECK(acs712_init());
+
+    // 5. SHT31 humidity (also brings up the shared I2C master bus)
+    esp_err_t sht_err = sht31_init();
+    if (sht_err != ESP_OK) {
+        ESP_LOGW(TAG, "SHT31 init failed (%s) — continuing without humidity",
+                 esp_err_to_name(sht_err));
+    }
+
+    // 6. Safety subsystem. Hardware envelope wins over saved config values.
     safety_config_t sc = {
-        .temp_max_c       = cfg.temp_max_c       > 0 ? cfg.temp_max_c       : SAFETY_TEMP_MAX_C,
-        .runaway_dt_c     = cfg.runaway_dt_c     > 0 ? cfg.runaway_dt_c     : SAFETY_RUNAWAY_DT_C,
-        .runaway_window_s = cfg.runaway_window_s > 0 ? cfg.runaway_window_s : SAFETY_RUNAWAY_WINDOW_S,
+        .temp_max_c       = SAFETY_TEMP_MAX_C,
+        .runaway_dt_c     = SAFETY_RUNAWAY_DT_C,
+        .runaway_window_s = SAFETY_RUNAWAY_WINDOW_S,
         .runaway_duty_thr = SAFETY_RUNAWAY_DUTY_THR,
         .hysteresis_c     = SAFETY_HYSTERESIS_C,
         .recovery_ramp_s  = SAFETY_RECOVERY_RAMP_S,
@@ -143,11 +157,64 @@ void app_main(void)
     };
     ESP_ERROR_CHECK(safety_init(&sc));
 
-    // 6. Tasks
-    sensor_task_start(rtd);
+    // 7. Energise turbines, give them 3 s to spool up, then learn nominal RMS.
+    //    CRÍTICO: esto se hace ANTES de arrancar control_task. Si control ya
+    //    estuviera corriendo pondría SSR_CH_FAN=0 cada ciclo (fan_command_on
+    //    es false al boot, no hay sesión activa) justo mientras
+    //    acs712_learn_nominal() mide → aprendería ~0 A y la detección de falla
+    //    de turbina quedaría inútil. Acá nadie compite por el SSR del fan.
+    ESP_LOGI(TAG, "spooling turbines to learn nominal current...");
+    ssr3ch_set_duty(SSR_CH_FAN, 1.0f);
+    vTaskDelay(pdMS_TO_TICKS(500));   // small delay before kicking off learn
+    float nominal = 0.0f;
+    esp_err_t lerr = acs712_learn_nominal(&nominal);
+    if (lerr == ESP_OK && nominal > 0.05f) {
+        app_state_lock();
+        app_state_get()->fan_nominal       = nominal;
+        app_state_get()->fan_nominal_known = true;
+        app_state_unlock();
+        ESP_LOGI(TAG, "fan nominal current = %.3f A", nominal);
+    } else {
+        ESP_LOGW(TAG, "fan nominal learn FAILED (%s, A=%.3f) — fan-fault detection disabled",
+                 esp_err_to_name(lerr), nominal);
+    }
+    // Apagar el fan: de acá en más lo gobierna control_task según la sesión.
+    ssr3ch_set_duty(SSR_CH_FAN, 0.0f);
+
+    // 8. Tasks
+    sensor_task_start();
     control_task_start();
     ui_task_start();
     watchdog_task_start();
 
-    ESP_LOGI(TAG, "boot complete; setpoint=%.1f°C", cfg.setpoint);
+    // 9. WiFi (STA). NO es crítico: se inicializa al final para no demorar el
+    //    bring-up de seguridad (SSR off + sensores + safety + tasks). Si falla,
+    //    sólo se loguea — el controlador sigue operando sin conectividad.
+    //    No-op si WIFI_ENABLED=0. Autoconecta si hay credenciales en NVS.
+    esp_err_t werr = wifi_manager_init();
+    if (werr != ESP_OK) {
+        ESP_LOGW(TAG, "wifi_manager_init falló (%s) — sin conectividad",
+                 esp_err_to_name(werr));
+    }
+
+    // 10. Servidor web de monitoreo (solo lectura). No crítico: el httpd escucha
+    //     en el stack LwIP y queda alcanzable en cuanto la STA tome IP. No-op si
+    //     WEB_SERVER_ENABLED=0. Sobrevive reconexiones WiFi sin reiniciarse.
+    esp_err_t serr = web_server_start();
+    if (serr != ESP_OK) {
+        ESP_LOGW(TAG, "web_server_start falló (%s) — sin dashboard web",
+                 esp_err_to_name(serr));
+    }
+
+    // 11. Telemetría a la nube (push HTTPS al backend Bio Origen). No crítico:
+    //     la tarea espera a que la STA tenga IP antes de empujar. No-op si
+    //     CLOUD_TELEMETRY_ENABLED=0 o si no hay identidad de fábrica provista.
+    esp_err_t cerr = cloud_telemetry_start();
+    if (cerr != ESP_OK) {
+        ESP_LOGW(TAG, "cloud_telemetry_start falló (%s) — sin telemetría remota",
+                 esp_err_to_name(cerr));
+    }
+
+    ESP_LOGI(TAG, "boot complete; setpoint=%.1f°C envelope=%.0f..%.0f°C",
+             cfg.setpoint, OPERATING_TEMP_MIN_C, OPERATING_TEMP_MAX_C);
 }

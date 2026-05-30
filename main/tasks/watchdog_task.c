@@ -9,6 +9,8 @@
 #include "app_config.h"
 #include "app_state.h"
 #include "safety.h"
+#include "telemetry.h"
+#include "recovery.h"
 #include "tasks/sensor_task.h"
 #include "tasks/control_task.h"
 #include "tasks/ui_task.h"
@@ -91,27 +93,34 @@ static void watchdog_task(void *arg)
     const uint32_t stack_log_every = (30 * 1000) / WATCHDOG_TASK_PERIOD_MS;
     uint32_t stack_log_counter = 0;
 
+    const float wdog_dt_s = (float)WATCHDOG_TASK_PERIOD_MS / 1000.0f;
+
     while (1) {
         // Snapshot everything we need under the lock; never dereference the
         // shared state pointer outside of it.
         uint64_t last_ts;
         float    last_temp;
         uint32_t faults;
+        bool     session_running;
         app_state_lock();
         app_state_t *st = app_state_get();
         uint64_t now = esp_timer_get_time();
         st->uptime_s = (uint32_t)((now - t0) / 1000000ULL);
-        last_ts   = st->last_sample.timestamp_us;
-        last_temp = st->last_sample.temperature;
-        faults    = st->safety_faults;
+        last_ts         = st->last_sample.timestamp_us;
+        last_temp       = st->last_sample.temperature;
+        faults          = st->safety_faults;
+        session_running = (st->run_state == RUN_STATE_RUNNING);
         app_state_unlock();
+
+        telemetry_tick(wdog_dt_s, session_running);
+        recovery_tick(wdog_dt_s);
 
         const uint64_t s_age_us = now - last_ts;
 
         // If sensor stops publishing for >1 s, force SSR off through safety.
         if (last_ts != 0 && s_age_us > 1000ULL * 1000ULL) {
             ESP_LOGW(TAG, "sensor stream stale (%llu us)", (unsigned long long)s_age_us);
-            safety_evaluate(0.0f, 0.0f, 0.0f, true);
+            safety_evaluate(0.0f, 0.0f, 0.0f, true, false);
         }
 
         if (faults & SAFETY_TRIP_MASK) {

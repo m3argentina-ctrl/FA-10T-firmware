@@ -31,3 +31,10 @@ venv/
 
 # Keep Claude project metadata local
 .claude/
+
+# Identidad de equipo — NUNCA commitear tokens reales. El template versionado
+# es main/device_identity.example.h; el real (banco) y las imágenes NVS de
+# fábrica por equipo se quedan locales.
+main/device_identity.h
+tools/provision/*.csv
+tools/provision/*.bin

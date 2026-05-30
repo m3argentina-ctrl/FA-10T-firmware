@@ -50,3 +50,78 @@ CONFIG_COMPILER_WARN_WRITE_STRINGS=y
 # Main task
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 CONFIG_ESP_MAIN_TASK_AFFINITY_CPU0=y
+
+# LVGL — skip examples/demos in production builds
+CONFIG_LV_BUILD_EXAMPLES=n
+
+# Byte order para RGB565: el ST7796 por SPI espera big-endian
+# (MSB primero). LVGL almacena RGB565 en little-endian por defecto. Sin este
+# swap los bits R/G/B se desordenan pixel a pixel y la imagen se ve "pixelada".
+CONFIG_LV_COLOR_16_SWAP=y
+
+# Bajar el período de polling del input device de 30 → 15 ms. Combinado con
+# el press latch en display.c::indev_read_cb, garantiza que tactos breves
+# (< 30 ms) no se pierdan. Costo de CPU despreciable (1 lectura I2C de 5
+# bytes cada 15 ms, ~150 µs por lectura).
+CONFIG_LV_INDEV_DEF_READ_PERIOD=15
+CONFIG_LV_USE_DEMO_WIDGETS=n
+CONFIG_LV_USE_DEMO_KEYPAD_AND_ENCODER=n
+CONFIG_LV_USE_DEMO_BENCHMARK=n
+CONFIG_LV_USE_DEMO_STRESS=n
+CONFIG_LV_USE_DEMO_MUSIC=n
+
+# LVGL fonts (Montserrat sizes used across FA-10T screens)
+CONFIG_LV_FONT_MONTSERRAT_10=y
+CONFIG_LV_FONT_MONTSERRAT_12=y
+CONFIG_LV_FONT_MONTSERRAT_14=y
+CONFIG_LV_FONT_MONTSERRAT_18=y
+CONFIG_LV_FONT_MONTSERRAT_22=y
+CONFIG_LV_FONT_MONTSERRAT_28=y
+CONFIG_LV_FONT_MONTSERRAT_46=y
+CONFIG_LV_FONT_MONTSERRAT_48=y
+
+# LVGL memory pool (UI is non-trivial; bump default 32K → 128K)
+CONFIG_LV_MEM_CUSTOM=n
+CONFIG_LV_MEM_SIZE_KILOBYTES=128
+
+# LVGL tick: we drive it from a 1ms esp_timer in display.c (no custom tick).
+# Touch keyboard / textarea support for AREA TECNICA inputs.
+CONFIG_LV_USE_KEYBOARD=y
+CONFIG_LV_USE_TEXTAREA=y
+
+# --------------------------------------------------------------------------
+# TLS saliente (cloud_telemetry -> HTTPS a Vercel)
+# --------------------------------------------------------------------------
+# La primera conexion HTTPS saliente fallaba en mbedtls_ssl_setup con
+# PSA_ERROR_INSUFFICIENT_MEMORY (-0x008D): mbedTLS 4.x aloja en DRAM interna
+# (MBEDTLS_INTERNAL_MEM_ALLOC), que al boot ya esta agotada por LCD+LVGL+
+# WiFi+web server. Bajamos la presion de RAM interna por dos lados:
+#  - DYNAMIC_BUFFER: libera el buffer RX de TLS (~16KB) entre records y solo
+#    lo agranda durante el handshake (recepcion del cert del server).
+#  - TRY_ALLOCATE_WIFI_LWIP: manda los buffers de WiFi/LWIP a PSRAM. NO es
+#    opcional: sin esto el driver WiFi ni siquiera inicializa en este board
+#    (DRAM interna agotada -> 'malloc buffer fail', 'Expected 10 rx buffer,
+#    actual 8', wifi_init ESP_ERR_NO_MEM). La DRAM interna es el recurso
+#    critico aca; ver tambien LV_MEM_CUSTOM (pool LVGL movido a PSRAM) que
+#    libera 128KB internos para que WiFi+TLS respiren.
+CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+
+# Verificacion de cadena CROSS-SIGNED (obligatorio para Vercel/Google Trust).
+# Vercel sirve el cert en una cadena cruzada:
+#   *.vercel.app  <-  WR1  <-  GTS Root R1  <-  GlobalSign Root CA
+# es decir, el ultimo cert que manda el server es "GTS Root R1" FIRMADO DE FORMA
+# CRUZADA por GlobalSign Root CA. El esp_crt_bundle por defecto solo registra un
+# verify_callback que matchea el issuer del cert mas alto contra el bundle y NO
+# sabe explorar la cadena cruzada -> falla con "No matching trusted root
+# certificate found" / mbedtls_ssl_handshake -0x3000. NO era un MITM del entorno:
+# el ESP sale por el router y ve el cert real de Google; esto fallaria igual en la
+# fabrica del cliente. Con esta opcion el bundle instala un ca_cb
+# (esp_crt_ca_cb_callback) que entrega CAs candidatas on-demand buscando por
+# issuer, permitiendo a mbedTLS armar la cadena cruzada hasta una raiz confiable.
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y
+
+# Permite ubicar segmentos .bss en PSRAM (seccion .ext_ram.bss). Lo usamos para
+# mandar el pool estatico de LVGL (128KB) a PSRAM via LV_ATTRIBUTE_LARGE_RAM_ARRAY
+# (ver CMakeLists.txt raiz), liberando 128KB de DRAM interna para WiFi + TLS.
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y

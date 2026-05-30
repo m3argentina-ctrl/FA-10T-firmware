@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>FA-10T — Monitor</title>
+<style>
+  :root{
+    --bg:#0e1116; --card:#171c24; --card2:#1f2630; --line:#2b333f;
+    --txt:#e6edf3; --muted:#8b97a7; --cyan:#16c0d8; --green:#2e9e3b;
+    --amber:#e8a020; --red:#d3392f; --blue:#2196f3;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+       font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+       -webkit-font-smoothing:antialiased}
+  header{position:sticky;top:0;background:#0e1116ee;backdrop-filter:blur(6px);
+         border-bottom:1px solid var(--line);padding:12px 16px;display:flex;
+         align-items:center;gap:10px;z-index:10}
+  header h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.5px}
+  header .id{font-size:12px;color:var(--muted);margin-left:auto;text-align:right;line-height:1.3}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--red);flex:0 0 auto;
+       box-shadow:0 0 0 3px #ffffff10}
+  .dot.ok{background:var(--green)}
+  main{max-width:760px;margin:0 auto;padding:14px;display:grid;gap:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .hero{display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap}
+  .temp{font-size:64px;font-weight:800;line-height:.95;color:var(--cyan)}
+  .temp small{font-size:24px;color:var(--muted);font-weight:600}
+  .sp{font-size:15px;color:var(--muted)}
+  .sp b{color:var(--txt);font-size:18px}
+  .badge{margin-left:auto;padding:8px 14px;border-radius:999px;font-weight:700;
+         font-size:14px;background:#2b333f;color:var(--txt);white-space:nowrap}
+  .badge.run{background:#16351c;color:#5be07a;border:1px solid #2e9e3b66}
+  .badge.warm{background:#3a2e10;color:#ffcd6b;border:1px solid #e8a02066}
+  .badge.pause{background:#332b10;color:#ffd98a}
+  .badge.alarm{background:#3a1512;color:#ff8a80;border:1px solid #d3392f88;animation:pulse 1s infinite}
+  .badge.idle{background:#222a34;color:var(--muted)}
+  @keyframes pulse{50%{opacity:.45}}
+  .prog{margin-top:14px}
+  .prog .bar{height:14px;background:#0c0f14;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+  .prog .fill{height:100%;width:0;background:linear-gradient(90deg,#16c0d8,#2196f3);transition:width .6s}
+  .prog .row{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-top:6px}
+  .outs{display:grid;gap:12px}
+  .out{display:grid;grid-template-columns:90px 1fr 48px;align-items:center;gap:10px;font-size:14px}
+  .out .lbl{color:var(--muted)}
+  .out .bar{height:10px;background:#0c0f14;border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+  .out .fill{height:100%;width:0;border-radius:6px;transition:width .5s}
+  .out .v{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
+  .f-drv{background:#d3392f}.f-fan{background:#2196f3}.f-aux{background:#2e9e3b}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+  .kv{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .kv .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+  .kv .val{font-size:20px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
+  h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:0 0 10px}
+  .evt{font-size:13px;display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--line)}
+  .evt:last-child{border-bottom:0}
+  .evt .ts{color:var(--muted);font-variant-numeric:tabular-nums;flex:0 0 auto}
+  .evt .tag{flex:0 0 auto;font-weight:700}
+  .evt.k1 .tag,.evt.k2 .tag{color:#5be07a}.evt.k3 .tag{color:#ffcd6b}
+  .evt.k4 .tag{color:#ff8a80}.evt.k5 .tag{color:#7fd0ff}.evt.k0 .tag{color:var(--muted)}
+  footer{color:var(--muted);font-size:11px;text-align:center;padding:6px 0 20px}
+  .offline main{opacity:.45;filter:grayscale(.5)}
+</style>
+</head>
+<body>
+<header>
+  <span id="dot" class="dot"></span>
+  <h1>FA-10T · MONITOR</h1>
+  <div class="id"><div id="modelo">—</div><div id="serie">—</div></div>
+</header>
+
+<main>
+  <section class="card">
+    <div class="hero">
+      <div>
+        <div class="temp"><span id="temp">--.-</span><small>°C</small></div>
+        <div class="sp">Consigna <b><span id="sp">--</span>°C</b> · <span id="modo">—</span></div>
+      </div>
+      <div id="estado" class="badge idle">—</div>
+    </div>
+    <div class="prog">
+      <div class="bar"><div id="pfill" class="fill"></div></div>
+      <div class="row"><span id="etapa">—</span><span>Transcurrido <b id="elapsed">--:--</b> · Resta <b id="rem">--:--</b></span></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Salidas</h2>
+    <div class="outs">
+      <div class="out"><span class="lbl">Calefactor</span><div class="bar"><div id="bdrv" class="fill f-drv"></div></div><span class="v"><span id="drv">0</span>%</span></div>
+      <div class="out"><span class="lbl">Turbina</span><div class="bar"><div id="bfan" class="fill f-fan"></div></div><span class="v"><span id="fan">0</span>%</span></div>
+      <div class="out"><span class="lbl">Extractor</span><div class="bar"><div id="baux" class="fill f-aux"></div></div><span class="v"><span id="aux">0</span>%</span></div>
+    </div>
+    <div class="grid" style="margin-top:14px">
+      <div class="kv"><div class="k">Humedad</div><div class="val"><span id="hum">--</span>%</div></div>
+      <div class="kv"><div class="k">T mín sesión</div><div class="val"><span id="tmin">--</span>°</div></div>
+      <div class="kv"><div class="k">T máx sesión</div><div class="val"><span id="tmax">--</span>°</div></div>
+      <div class="kv"><div class="k">Uptime</div><div class="val" id="uptime">—</div></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Histórico del equipo</h2>
+    <div class="grid">
+      <div class="kv"><div class="k">Horas total</div><div class="val" id="htot">—</div></div>
+      <div class="kv"><div class="k">Horas servicio</div><div class="val" id="hsvc">—</div></div>
+      <div class="kv"><div class="k">Lotes</div><div class="val" id="sess">—</div></div>
+      <div class="kv"><div class="k">Completados</div><div class="val" id="sessok">—</div></div>
+      <div class="kv"><div class="k">Interrumpidos</div><div class="val" id="sessint">—</div></div>
+      <div class="kv"><div class="k">Fallas turbina</div><div class="val" id="fanf">—</div></div>
+      <div class="kv"><div class="k">Cortes energía</div><div class="val" id="pwrf">—</div></div>
+      <div class="kv"><div class="k">T máx histórica</div><div class="val"><span id="tmaxh">—</span>°</div></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Eventos recientes</h2>
+    <div id="evts"><div class="evt"><span class="ts">—</span><span>cargando…</span></div></div>
+  </section>
+</main>
+<footer>FA-10T v3.0 · Bio Origen · <span id="ip">—</span></footer>
+
+<script>
+const MODO=['Reposo','Manual','Programa'];
+const RUN =['Reposo','Configurando','En marcha','Pausado','Completado','ALARMA'];
+const RUNCLS=['idle','idle','run','pause','idle','alarm'];
+const EVT =['Boot','Inicio lote','Fin lote','Corte energía','Falla','Servicio'];
+const $=id=>document.getElementById(id);
+
+function hms(s){s=Math.max(0,s|0);const h=(s/3600)|0,m=((s%3600)/60)|0,x=s%60;
+  return h>0?`${h}:${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`
+            :`${m}:${String(x).padStart(2,'0')}`;}
+
+async function tick(){
+  try{
+    const r=await fetch('/api/status',{cache:'no-store'});
+    if(!r.ok) throw 0;
+    const d=await r.json();
+    document.body.classList.remove('offline');
+    $('dot').classList.add('ok');
+
+    $('temp').textContent=d.temp.toFixed(1);
+    $('sp').textContent=d.sp_eff.toFixed(0);
+    $('modo').textContent=MODO[d.op_mode]||'—';
+    $('modelo').textContent=d.modelo||'—';
+    $('serie').textContent=d.serie||'—';
+    $('ip').textContent=d.ip||'';
+
+    let est=RUN[d.run_state]||'—', cls=RUNCLS[d.run_state]||'idle';
+    if(d.run_state===2 && d.warmup===0){est='Calentando';cls='warm';}
+    const b=$('estado'); b.textContent=est; b.className='badge '+cls;
+
+    const pct=d.total_s>0?Math.min(100,100*d.elapsed_s/d.total_s):0;
+    $('pfill').style.width=pct.toFixed(1)+'%';
+    $('elapsed').textContent=hms(d.elapsed_s);
+    $('rem').textContent=hms(d.remaining_s);
+    $('etapa').textContent = d.op_mode===2 ? ('Etapa '+(d.etapa+1)+'/3') :
+                             (d.prog && d.prog.length ? d.prog : (MODO[d.op_mode]||''));
+
+    const setbar=(id,bid,v)=>{$(id).textContent=v.toFixed(0);$(bid).style.width=Math.max(0,Math.min(100,v))+'%';};
+    setbar('drv','bdrv',d.drv); setbar('fan','bfan',d.fan); setbar('aux','baux',d.aux);
+
+    $('hum').textContent = d.hum_fault? '—' : d.hum.toFixed(0);
+    $('tmin').textContent=isFinite(d.t_min)?d.t_min.toFixed(0):'--';
+    $('tmax').textContent=isFinite(d.t_max)?d.t_max.toFixed(0):'--';
+    $('uptime').textContent=hms(d.uptime_s);
+
+    $('htot').textContent=d.hours_total.toFixed(1)+' h';
+    $('hsvc').textContent=d.hours_svc.toFixed(1)+' h';
+    $('sess').textContent=d.sessions;
+    $('sessok').textContent=d.sess_ok;
+    $('sessint').textContent=d.sess_int;
+    $('fanf').textContent=d.fan_faults;
+    $('pwrf').textContent=d.power_fails;
+    $('tmaxh').textContent=d.t_max_hist.toFixed(0);
+  }catch(e){
+    document.body.classList.add('offline');
+    $('dot').classList.remove('ok');
+  }
+}
+
+async function loadEvents(){
+  try{
+    const r=await fetch('/api/events',{cache:'no-store'});
+    const a=await r.json();
+    if(!a.length){$('evts').innerHTML='<div class="evt"><span>sin eventos</span></div>';return;}
+    $('evts').innerHTML=a.map(e=>
+      `<div class="evt k${e.kind}"><span class="ts">${hms(e.t)}</span>`+
+      `<span class="tag">${EVT[e.kind]||'?'}</span><span>${e.msg||''}</span></div>`).join('');
+  }catch(e){}
+}
+
+tick(); loadEvents();
+setInterval(tick,2000);
+setInterval(loadEvents,10000);
+</script>
+</body>
+</html>
