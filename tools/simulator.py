@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# FA-10T v3.0 — Standalone PC simulator
+# Control SPE32-S3 v3.0 — Standalone PC simulator
 #
 # Mimics the firmware's control loop + drivers on a Windows/Linux PC so the
 # operator can validate behavior end-to-end without an ESP32. The output panel
@@ -320,7 +320,7 @@ def render(sim: "Sim", uptime_s: float, dt_print: float):
     bar = "-" * 64
     print()
     print(bar)
-    print(f"  FA-10T v3.0 | UP {fmt_hms(uptime_s)} | {state}")
+    print(f"  Control SPE32-S3 v3.0 | UP {fmt_hms(uptime_s)} | {state}")
     print(f"  TEMP: {t:5.1f} C | SP: {sp:5.1f} C | dT: {t-sp:+5.1f} C")
     print(f"  PID OUT: {pid:5.1f}% | SSR DRV: {drv:5.1f}% | SSR FAN: {fan:5.1f}% | SSR AUX: {aux:5.1f}%")
     print(f"  HUMIDITY: {rh:4.1f}% | FAN: {i_fan:.3f}A {fan_ok} (nom={nom:.3f}A)")
@@ -410,7 +410,7 @@ class Sim:
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description="FA-10T v3.0 standalone PC simulator",
+        description="Control SPE32-S3 v3.0 standalone PC simulator",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("--sp", "--setpoint", type=float, default=60.0,
@@ -441,7 +441,7 @@ def main():
     sim = Sim(cfg=cfg, setpoint=args.setpoint,
               duration_s=args.duration, speed=args.fast)
 
-    print(f"FA-10T simulator | SP={args.setpoint:.1f} C | duration={args.duration:.0f}s | "
+    print(f"Control SPE32-S3 simulator | SP={args.setpoint:.1f} C | duration={args.duration:.0f}s | "
           f"speed={args.fast:.1f}x | dt={args.dt:.2f}s")
     print(f"config loaded from: {args.config}")
 

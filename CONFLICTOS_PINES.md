@@ -1,4 +1,4 @@
-# CONFLICTOS DE PINES — FA-10T v3.0 + Waveshare ESP32-S3-Touch-LCD-3.5
+# CONFLICTOS DE PINES — Control SPE32-S3 v3.0 + Waveshare ESP32-S3-Touch-LCD-3.5
 
 **Fecha:** 2026-05-27
 **Fuente schematic Waveshare:** [ESP32-S3-Touch-LCD-3.5-Schematic.pdf](https://files.waveshare.com/wiki/ESP32-S3-Touch-LCD-3.5/ESP32-S3-Touch-LCD-3.5-Schematic.pdf)

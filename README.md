@@ -1,6 +1,6 @@
-# FA-10T v3.0 — Industrial Thermal Controller
+# Control SPE32-S3 v3.0 — Industrial Thermal Controller
 
-Firmware ESP-IDF para controlador térmico industrial **FA-10T v3.0** sobre **ESP32-S3**.
+Firmware ESP-IDF para controlador térmico industrial **Control SPE32-S3 v3.0** sobre **ESP32-S3**.
 
 ## Características principales
 

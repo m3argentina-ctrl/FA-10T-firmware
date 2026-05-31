@@ -1,6 +1,6 @@
 # PRUEBA_DISPLAY.md — Primer encendido del Waveshare ESP32-S3-Touch-LCD-3.5
 
-**Firmware:** FA-10T v3.0, fase 3 (integración display)
+**Firmware:** Control SPE32-S3 v3.0, fase 3 (integración display)
 **Hardware:** Waveshare ESP32-S3-Touch-LCD-3.5 (sin sufijo "B")
 **Build verificado:** 2026-05-27 con SIMULATION_MODE=1 → 608 KB, 80% partición libre.
 **Bring-up real con SIMULATION_MODE=0:** 2026-05-27 → 685 KB, 78% libre, display + touch OK.
@@ -92,7 +92,7 @@ El monitor abre en serie a 115200 baud. Para salir: `Ctrl+]`.
 
 | Tiempo  | Log esperado                                                   | Pantalla            |
 |---------|----------------------------------------------------------------|---------------------|
-| 0 s     | `I (xxx) main: FA-10T v3.0 firmware boot`                      | Negro               |
+| 0 s     | `I (xxx) main: Control SPE32-S3 v3.0 firmware boot`                      | Negro               |
 | ~0.5 s  | `I (xxx) sht31: SHT31 init: SDA=8 SCL=7 addr=0x44`             | Negro               |
 | ~0.5 s  | `I (xxx) ssr3ch: ...`, `pt1000_adc: ...`, `acs712: ...`        | Negro               |
 | ~1 s    | `I (xxx) ui_task: UI task started`                             | Negro               |

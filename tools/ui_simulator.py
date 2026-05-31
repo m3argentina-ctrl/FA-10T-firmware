@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# FA-10T v3.0 — visual UI mock of the LVGL screens.
+# Control SPE32-S3 v3.0 — visual UI mock of the LVGL screens.
 #
 # Renders the eight on-device screens as designed in main/screens/ at the
 # native 480×320 resolution using tkinter (Python stdlib — no external deps).
@@ -108,7 +108,7 @@ SCREENS = (
 class UISim:
     def __init__(self, root: tk.Tk):
         self.root = root
-        root.title("FA-10T v3.0 — UI mock (480×320)")
+        root.title("Control SPE32-S3 v3.0 — UI mock (480×320)")
         root.resizable(False, False)
 
         self.cv = tk.Canvas(root, width=W, height=H, bg=COL_PANEL_BG,
