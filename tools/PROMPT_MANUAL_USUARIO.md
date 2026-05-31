@@ -1,4 +1,4 @@
-# PROMPT — Generar Manual de Usuario del Controlador Control SPE32-S3 v3.0
+# PROMPT — Generar Manual de Usuario del Controlador Control ESP32-S3 v3.0
 
 > Copiá TODO lo que sigue (desde "Tarea" hasta el final) y pegalo en una nueva
 > conversación con Claude. El manual generado debería ser de ~15 a 30 páginas
@@ -10,7 +10,7 @@
 
 Sos un redactor técnico especializado en manuales de usuario para equipos
 industriales. Generá un **Manual de Usuario completo y autocontenido en
-Markdown** para el controlador electrónico **Control SPE32-S3 v3.0** de la empresa
+Markdown** para el controlador electrónico **Control ESP32-S3 v3.0** de la empresa
 argentina **Bio Origen** (`www.bioorigen.com.ar`, `info@bioorigen.com.ar`).
 
 El destinatario es el **operador del equipo** (no técnico ni electrónico).
@@ -27,7 +27,7 @@ relés de estado sólido (SSR). Tiene una pantalla táctil color 3.5" como
 ## Contexto del producto
 
 - **Fabricante**: Bio Origen — alimentos deshidratados.
-- **Modelo del controlador**: Control SPE32-S3 v3.0 (Firmware versión 3 fase 4).
+- **Modelo del controlador**: Control ESP32-S3 v3.0 (Firmware versión 3 fase 4).
 - **Modelo de equipo por defecto**: IND-26MTO (editable desde Área Técnica).
 - **Hardware**:
   - Display: pantalla táctil color 480×320 con touch capacitivo.
@@ -355,7 +355,7 @@ Quiero el manual con **estas secciones, en este orden**:
    logo (referencia: "/assets/logo.png"), versión del manual (1.0),
    fecha (mes actual / año actual).
 2. **Tabla de contenidos** (con anclas a cada sección).
-3. **Introducción** (1-2 páginas): qué es el Control SPE32-S3, para qué sirve, a
+3. **Introducción** (1-2 páginas): qué es el Control ESP32-S3, para qué sirve, a
    quién está dirigido este manual, símbolos usados (⚠ peligro, 💡
    tip, ℹ nota).
 4. **Primeros pasos**: cómo encender, qué se ve en el SPLASH, llegar a
@@ -402,5 +402,5 @@ Quiero el manual con **estas secciones, en este orden**:
 ## Output
 
 Generá el manual completo en un solo bloque Markdown, sin truncar.
-Empezá con `# Manual de Usuario — Controlador Control SPE32-S3 v3.0` y terminá con
+Empezá con `# Manual de Usuario — Controlador Control ESP32-S3 v3.0` y terminá con
 la sección de contacto. No agregues comentarios fuera del manual.

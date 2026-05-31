@@ -1,4 +1,4 @@
-// Control SPE32-S3 v3.0 — Waveshare ESP32-S3-Touch-LCD-3.5 pinout
+// Control ESP32-S3 v3.0 — Waveshare ESP32-S3-Touch-LCD-3.5 pinout
 //
 // FUENTE PRIMARIA: schematic oficial Waveshare
 //   https://files.waveshare.com/wiki/ESP32-S3-Touch-LCD-3.5/ESP32-S3-Touch-LCD-3.5-Schematic.pdf

@@ -1,4 +1,4 @@
-# Control SPE32-S3 v3.0 — Industrial Thermal Controller
+# Control ESP32-S3 v3.0 — Industrial Thermal Controller
 # Target: ESP32-S3
 # Build system: ESP-IDF
 

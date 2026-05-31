@@ -1,4 +1,4 @@
-// Control SPE32-S3 v3.0 — Industrial Thermal Controller (ESP32-S3, Waveshare 3.5" LCD)
+// Control ESP32-S3 v3.0 — Industrial Thermal Controller (ESP32-S3, Waveshare 3.5" LCD)
 //
 // Boot sequence:
 //   1. NVS init + load config
@@ -102,12 +102,12 @@ void app_main(void)
     // Modo de calibración de pinout: ciclar GPIOs del header J8 e imprimir
     // qué pin está activo. NO se inicializa el resto del firmware. Volver a
     // GPIO_TEST_MODE=0 en app_config.h cuando el pinout esté confirmado.
-    ESP_LOGW(TAG, "Control SPE32-S3 BOOT EN MODO TEST DE PINOUT — firmware normal omitido");
+    ESP_LOGW(TAG, "Control ESP32-S3 BOOT EN MODO TEST DE PINOUT — firmware normal omitido");
     gpio_test_loop();   // nunca retorna
     return;
 #endif
 
-    ESP_LOGI(TAG, "Control SPE32-S3 v3.0 firmware boot%s%s",
+    ESP_LOGI(TAG, "Control ESP32-S3 v3.0 firmware boot%s%s",
              SIMULATION_MODE   ? " [SIMULATION]"      : "",
              SENSORS_SIMULATION ? " [SENSORS-SIM]"     : "");
 

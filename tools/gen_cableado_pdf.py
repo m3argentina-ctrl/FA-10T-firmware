@@ -56,13 +56,13 @@ doc = SimpleDocTemplate(
     OUTPUT, pagesize=A4,
     leftMargin=18*mm, rightMargin=18*mm,
     topMargin=15*mm, bottomMargin=15*mm,
-    title="Control SPE32-S3 v3.0 — Cableado PCB H1 ↔ Waveshare J8",
+    title="Control ESP32-S3 v3.0 — Cableado PCB H1 ↔ Waveshare J8",
     author="Bio Origen", subject="Cableado PCB FA-10T",
 )
 story = []
 
 # Header
-story.append(Paragraph("Control SPE32-S3 v3.0 — Mapeo de cableado", title_style))
+story.append(Paragraph("Control ESP32-S3 v3.0 — Mapeo de cableado", title_style))
 story.append(Paragraph(
     "PCB FA-10T H1 &harr; Header J8 del Waveshare ESP32-S3-Touch-LCD-3.5"
     "<br/><b>Bio Origen</b> &middot; firmware fase 4 &middot; 2026-05-28",
@@ -288,7 +288,7 @@ story.append(Paragraph(
 story.append(Spacer(1, 14))
 story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#DDDDDD")))
 story.append(Paragraph(
-    "<i>Bio Origen &mdash; Control SPE32-S3 v3.0 &mdash; documento generado automáticamente "
+    "<i>Bio Origen &mdash; Control ESP32-S3 v3.0 &mdash; documento generado automáticamente "
     "desde tools/gen_cableado_pdf.py</i>",
     ParagraphStyle("foot", parent=styles["Normal"], fontSize=7,
                    alignment=TA_CENTER, textColor=colors.HexColor("#888888"))

@@ -1,5 +1,5 @@
 # --------------------------------------------------------------------------
-# Control SPE32-S3 v3.0 — sdkconfig defaults
+# Control ESP32-S3 v3.0 — sdkconfig defaults
 # --------------------------------------------------------------------------
 
 # Target
@@ -70,7 +70,7 @@ CONFIG_LV_USE_DEMO_BENCHMARK=n
 CONFIG_LV_USE_DEMO_STRESS=n
 CONFIG_LV_USE_DEMO_MUSIC=n
 
-# LVGL fonts (Montserrat sizes used across Control SPE32-S3 screens)
+# LVGL fonts (Montserrat sizes used across Control ESP32-S3 screens)
 CONFIG_LV_FONT_MONTSERRAT_10=y
 CONFIG_LV_FONT_MONTSERRAT_12=y
 CONFIG_LV_FONT_MONTSERRAT_14=y

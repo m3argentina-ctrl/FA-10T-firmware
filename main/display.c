@@ -1,4 +1,4 @@
-// Control SPE32-S3 v3.0 — Display + Touch + LVGL bridge for Waveshare ESP32-S3-Touch-LCD-3.5.
+// Control ESP32-S3 v3.0 — Display + Touch + LVGL bridge for Waveshare ESP32-S3-Touch-LCD-3.5.
 //
 // Pinout: ver main/display_pins.h (extraído del schematic oficial Waveshare).
 // Conflictos hardware con la PCB FA-10T: ver CONFLICTOS_PINES.md (raíz del repo).
