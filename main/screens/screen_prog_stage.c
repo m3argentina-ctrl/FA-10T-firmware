@@ -12,6 +12,13 @@
 #include <stdio.h>
 #include <stdint.h>
 
+// Auto-repeat de los spin buttons. HOLD_DELAY_MS es la espera ANTES del primer
+// auto-repeat: con un valor alto, un toque corto normal (~150-250 ms) ejecuta un
+// solo paso (no dos), así se puede afinar la temperatura de a 0,1 sin saltos.
+// Al mantener apretado, tras esa espera el repeat pasa a HOLD_REPEAT_MS (rápido).
+#define HOLD_DELAY_MS   450
+#define HOLD_REPEAT_MS  90
+
 static lv_obj_t   *s_temp_lbl;
 static lv_obj_t   *s_time_lbl;
 static lv_obj_t   *s_title;
@@ -65,8 +72,8 @@ static void apply_step(int8_t dir, uint8_t kind, uint32_t pulse)
 
 static void hold_timer_cb(lv_timer_t *t)
 {
-    (void)t;
     apply_step(s_hold_dir, s_hold_kind, s_hold_count++);
+    lv_timer_set_period(t, HOLD_REPEAT_MS);   // tras el 1er disparo, acelera
 }
 
 static void spin_press_cb(lv_event_t *e)
@@ -76,7 +83,7 @@ static void spin_press_cb(lv_event_t *e)
     s_hold_kind  = (code >> 1) & 0x01;
     s_hold_count = 0;
     apply_step(s_hold_dir, s_hold_kind, s_hold_count++);
-    if (!s_hold_timer) s_hold_timer = lv_timer_create(hold_timer_cb, 120, NULL);
+    if (!s_hold_timer) s_hold_timer = lv_timer_create(hold_timer_cb, HOLD_DELAY_MS, NULL);
 }
 
 static void spin_release_cb(lv_event_t *e)

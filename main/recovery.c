@@ -139,6 +139,19 @@ esp_err_t recovery_resume_from(const recovery_snapshot_t *snap)
     app_state_lock();
     app_state_t *st = app_state_get();
     st->session_elapsed_s   = snap->session_elapsed_s;
+
+    // En programas, programa_start_session() reseteó etapa_activa=0 y el
+    // setpoint a la etapa 1. Restauramos la etapa donde se cortó la luz y
+    // apuntamos el setpoint a ESA etapa. warmup_done quedó en false, así que el
+    // equipo vuelve a calentar respetando la temperatura de la etapa correcta
+    // antes de seguir contando el tiempo restante.
+    if (snap->op_mode == OP_MODE_PROGRAMS) {
+        uint8_t stage = snap->etapa_activa;
+        if (stage >= PROG_STAGE_COUNT) stage = PROG_STAGE_COUNT - 1;
+        st->etapa_activa       = stage;
+        st->effective_setpoint = st->etapa_sp[stage];
+    }
+
     if (st->session_elapsed_s >= st->session_total_s) {
         st->session_remaining_s = 0;
         st->run_state           = RUN_STATE_COMPLETED;

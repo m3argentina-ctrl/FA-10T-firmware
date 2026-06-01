@@ -171,13 +171,18 @@ void programa_tick(float dt_s)
     if (t_now < st->t_min_sesion) st->t_min_sesion = t_now;
     if (t_now > st->t_max_sesion) st->t_max_sesion = t_now;
 
-    // Warm-up: el tiempo no avanza hasta que T cruce el SP de la primera
-    // etapa. Una vez hecho el warm-up, la sesión corre normal (cada etapa
-    // dura lo que dura, no esperamos nuevamente el SP entre etapas).
-    if (!st->warmup_done && t_now >= st->etapa_sp[0] - WARMUP_TOLERANCE_C) {
+    // Warm-up: el tiempo no avanza hasta que T cruce el SP de la etapa ACTUAL.
+    // En un arranque normal etapa_activa==0, así que espera la etapa 1. Tras un
+    // corte de luz se recupera en la etapa donde estaba (2 o 3), y entonces el
+    // warm-up debe esperar el SP de ESA etapa, no el de la etapa 1. Una vez hecho
+    // el warm-up, la sesión corre normal (cada etapa dura lo que dura, no
+    // esperamos nuevamente el SP entre etapas).
+    if (!st->warmup_done &&
+        t_now >= st->etapa_sp[st->etapa_activa] - WARMUP_TOLERANCE_C) {
         st->warmup_done = true;
-        ESP_LOGI(TAG, "warm-up done at T=%.1f°C (SP etapa 1=%.1f°C)",
-                 t_now, st->etapa_sp[0]);
+        ESP_LOGI(TAG, "warm-up done at T=%.1f°C (SP etapa %u=%.1f°C)",
+                 t_now, (unsigned)(st->etapa_activa + 1),
+                 st->etapa_sp[st->etapa_activa]);
     }
     if (!st->warmup_done) {
         app_state_unlock();
