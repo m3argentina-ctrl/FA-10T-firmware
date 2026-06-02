@@ -19,6 +19,7 @@ extern "C" {
 #define MODEL_NAME_MAX        16
 #define SERIE_NUM_MAX         16     // número de serie del equipo (ej. "2026-A-0123")
 #define PIN_LEN_MAX           5      // 4 digits + NUL
+#define MODULOS_MAX           16     // tope de módulos turbina+resistencia (línea comercial)
 
 typedef struct {
     float    temperature;     // °C, after calibration
@@ -82,6 +83,12 @@ typedef struct {
     uint32_t        session_remaining_s;
     float           t_min_sesion;
     float           t_max_sesion;
+    // Consumo energético de la sesión, estimado integrando el duty del PID.
+    // Valores POR MÓDULO (una resistencia de 2000 W / una turbina): la nube los
+    // multiplica por la cantidad de módulos del modelo. Acumuladores float para
+    // no truncar dt<1s (mismo motivo que session_elapsed_s).
+    float           session_energy_wh;   // Wh de UNA resistencia de 2000 W
+    float           session_fan_on_s;    // segundos de UNA turbina encendida
     // warm-up: el tiempo de proceso NO empieza a correr hasta que la T
     // actual cruza por primera vez (effective_setpoint - SAFETY_HYSTERESIS_C).
     // Mientras !warmup_done la UI muestra "CALENTANDO" y session_elapsed_s
@@ -95,6 +102,9 @@ typedef struct {
     char            modelo[MODEL_NAME_MAX];
     char            serie[SERIE_NUM_MAX];
     char            pin_servicio[PIN_LEN_MAX];
+    // Cantidad de módulos turbina+resistencia (2000 W c/u). La nube multiplica el
+    // consumo por-módulo (session_energy_wh / session_fan_on_s) por este valor.
+    uint8_t         num_modulos;
 } app_state_t;
 
 void              app_state_init(void);
@@ -111,6 +121,7 @@ void              app_state_set_config(const fa10t_config_t *cfg);
 esp_err_t         app_state_save_modelo(const char *modelo);
 esp_err_t         app_state_save_serie(const char *serie);
 esp_err_t         app_state_save_pin(const char *pin);
+esp_err_t         app_state_save_num_modulos(uint8_t n);   // clamp 1..MODULOS_MAX
 
 #ifdef __cplusplus
 }

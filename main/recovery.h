@@ -16,6 +16,10 @@ typedef struct {
     uint8_t    etapa_activa;
     uint32_t   session_elapsed_s;
     programa_t recipe;
+    // Consumo acumulado de la sesión (por módulo). Se guarda para no perderlo si
+    // se corta la luz en medio de un secado y luego se retoma.
+    float      session_energy_wh;
+    float      session_fan_on_s;
 } recovery_snapshot_t;
 
 esp_err_t recovery_init(void);

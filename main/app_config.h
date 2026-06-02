@@ -157,6 +157,17 @@
 #define SSR_ACTIVE_HIGH              true
 #define SSR_TICK_INTERVAL_MS         10
 
+// --- Consumo energético (estimación para mostrar kWh) -----------------------
+// Potencia POR MÓDULO (una resistencia + una turbina). El firmware integra el
+// consumo de UN módulo (session_energy_wh / session_fan_on_s) y tanto el LCD
+// como la nube lo multiplican por num_modulos.
+//   - Resistencia: 2000 W a 220 V (carga resistiva, FP≈1).
+//   - Turbina:     motor de polo de sombra 220 V × 0,40 A = 88 VA ≈ 88 W.
+//                  (potencia aparente; la activa es algo menor por el FP bajo
+//                  del shaded-pole, pero es marginal frente a los 2000 W).
+#define RES_WATTS_PER_MODULE         2000.0f
+#define FAN_WATTS_PER_MODULE         88.0f
+
 // --- I2C bus (shared SHT31 + PCF85063 RTC) ----------------------------------
 #define PIN_I2C_SCL                  7
 #define PIN_I2C_SDA                  8

@@ -1,5 +1,6 @@
 #include "ui_common.h"
 #include "app_state.h"
+#include "app_config.h"
 #include "modo_manual.h"
 #include "safety.h"
 
@@ -8,7 +9,7 @@
 // Widgets actualizados desde update_cb cada 500 ms.
 static lv_obj_t *s_owner_scr;
 static lv_obj_t *s_state_bar, *s_state_lbl;
-static lv_obj_t *s_sp_lbl, *s_tprog_lbl, *s_tmin_lbl, *s_tmax_lbl;
+static lv_obj_t *s_sp_lbl, *s_tprog_lbl, *s_tmin_lbl, *s_tmax_lbl, *s_kwh_lbl;
 static lv_obj_t *s_res_box, *s_res_lbl;
 static lv_obj_t *s_fan_box, *s_fan_lbl;
 static lv_obj_t *s_big_temp, *s_temp_sp_lbl;
@@ -46,6 +47,12 @@ static void update_cb(lv_timer_t *t)
     lv_label_set_text(s_tmin_lbl, buf);
     snprintf(buf, sizeof(buf), "%.1f", s.t_max_sesion < -998.0f ? 0.0f : s.t_max_sesion);
     lv_label_set_text(s_tmax_lbl, buf);
+
+    // Consumo estimado del proceso (kWh): resistencia + turbina, ambos por
+    // módulo, × num_modulos. Sube en vivo y queda fijo en el total al COMPLETAR.
+    float wh_mod = s.session_energy_wh + s.session_fan_on_s * (FAN_WATTS_PER_MODULE / 3600.0f);
+    snprintf(buf, sizeof(buf), "%.2f", wh_mod * (float)s.num_modulos / 1000.0f);
+    lv_label_set_text(s_kwh_lbl, buf);
 
     set_onoff(s_res_box, s_res_lbl, s.ssr_drv_duty > 0.05f);
     set_onoff(s_fan_box, s_fan_lbl, s.ssr_fan_duty > 0.05f);
@@ -221,11 +228,12 @@ void screen_func_manual_build(lv_obj_t *scr)
     lv_obj_set_style_radius(s_time_bar, 5, LV_PART_MAIN);
     lv_obj_set_style_radius(s_time_bar, 5, LV_PART_INDICATOR);
 
-    // y=208..248: row inferior T MIN | T MAX (centradas)
-    const int B2_W = 110, B2_GAP = 12;
-    int x2 = (LV_HOR_RES - UI_RIGHT_X - (2 * B2_W + B2_GAP)) / 2;
-    make_info_box(p, "T MIN SESION", x2,               208, B2_W, UI_COL_CYAN,   UI_COL_CYAN,   &s_tmin_lbl);
-    make_info_box(p, "T MAX SESION", x2 + B2_W + B2_GAP, 208, B2_W, UI_COL_YELLOW, UI_COL_YELLOW, &s_tmax_lbl);
+    // y=208..248: row inferior T MIN | T MAX | CONSUMO (3 cajas centradas)
+    const int B2_W = 110, B2_GAP = 9;
+    int x2 = (LV_HOR_RES - UI_RIGHT_X - (3 * B2_W + 2 * B2_GAP)) / 2;
+    make_info_box(p, "T MIN SESION", x2,                     208, B2_W, UI_COL_CYAN,   UI_COL_CYAN,   &s_tmin_lbl);
+    make_info_box(p, "T MAX SESION", x2 + (B2_W + B2_GAP),   208, B2_W, UI_COL_YELLOW, UI_COL_YELLOW, &s_tmax_lbl);
+    make_info_box(p, "CONSUMO kWh",  x2 + 2*(B2_W + B2_GAP), 208, B2_W, UI_COL_GREEN,  UI_COL_GREEN,  &s_kwh_lbl);
 
     // Bottom: 3 botones
     s_pausar_btn = lv_btn_create(p);

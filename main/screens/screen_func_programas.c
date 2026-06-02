@@ -1,5 +1,6 @@
 #include "ui_common.h"
 #include "app_state.h"
+#include "app_config.h"
 #include "programa.h"
 #include "safety.h"
 
@@ -15,6 +16,7 @@ static lv_obj_t *s_big_time, *s_time_total_lbl;
 static lv_obj_t *s_temp_bar, *s_time_bar;
 static lv_obj_t *s_res_box, *s_res_lbl;
 static lv_obj_t *s_fan_box, *s_fan_lbl;
+static lv_obj_t *s_kwh_lbl;
 static lv_obj_t *s_pausar_btn;
 
 static void format_hhmmss(uint32_t s, char *out, size_t n)
@@ -116,6 +118,12 @@ static void update_cb(lv_timer_t *t)
     // ON/OFF
     set_onoff(s_res_box, s_res_lbl, s.ssr_drv_duty > 0.05f);
     set_onoff(s_fan_box, s_fan_lbl, s.ssr_fan_duty > 0.05f);
+
+    // Consumo estimado del proceso (kWh): resistencia + turbina por módulo,
+    // × num_modulos. Sube en vivo y queda fijo en el total al COMPLETAR.
+    float wh_mod = s.session_energy_wh + s.session_fan_on_s * (FAN_WATTS_PER_MODULE / 3600.0f);
+    snprintf(buf, sizeof(buf), "%.2f", wh_mod * (float)s.num_modulos / 1000.0f);
+    lv_label_set_text(s_kwh_lbl, buf);
 
     if (s.safety_faults & SAFETY_TRIP_MASK) { ui_show_screen(UI_SCREEN_ALARMA); return; }
 
@@ -256,13 +264,15 @@ void screen_func_programas_build(lv_obj_t *scr)
     lv_obj_set_style_radius(s_time_bar, 5, LV_PART_MAIN);
     lv_obj_set_style_radius(s_time_bar, 5, LV_PART_INDICATOR);
 
-    // y=208..248: row RESISTENCIA | TURBINAS centradas
-    const int B2_W = 110, B2_GAP = 12;
-    int x2 = (LV_HOR_RES - UI_RIGHT_X - (2 * B2_W + B2_GAP)) / 2;
-    s_res_box = make_info_box(p, "RESISTENCIA", x2,               208, B2_W,
+    // y=208..248: row RESISTENCIA | TURBINAS | CONSUMO (3 cajas centradas)
+    const int B2_W = 110, B2_GAP = 9;
+    int x2 = (LV_HOR_RES - UI_RIGHT_X - (3 * B2_W + 2 * B2_GAP)) / 2;
+    s_res_box = make_info_box(p, "RESISTENCIA", x2,                     208, B2_W,
                               UI_COL_GREEN, UI_COL_WHITE, &s_res_lbl);
-    s_fan_box = make_info_box(p, "TURBINAS",    x2 + B2_W + B2_GAP, 208, B2_W,
+    s_fan_box = make_info_box(p, "TURBINAS",    x2 + (B2_W + B2_GAP),   208, B2_W,
                               UI_COL_GREEN, UI_COL_WHITE, &s_fan_lbl);
+    make_info_box(p, "CONSUMO kWh", x2 + 2*(B2_W + B2_GAP), 208, B2_W,
+                  UI_COL_GREEN, UI_COL_GREEN, &s_kwh_lbl);
 
     // Bottom: 3 botones
     s_pausar_btn = lv_btn_create(p);

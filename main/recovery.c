@@ -83,6 +83,8 @@ void recovery_tick(float dt_s)
         snap.op_mode           = st->op_mode;
         snap.etapa_activa      = st->etapa_activa;
         snap.session_elapsed_s = st->session_elapsed_s;
+        snap.session_energy_wh = st->session_energy_wh;
+        snap.session_fan_on_s  = st->session_fan_on_s;
         snprintf(snap.recipe.nombre, PROG_NAME_MAX, "%s", st->nombre_programa);
         for (int i = 0; i < PROG_STAGE_COUNT; ++i) {
             snap.recipe.etapa_sp[i]         = st->etapa_sp[i];
@@ -139,6 +141,10 @@ esp_err_t recovery_resume_from(const recovery_snapshot_t *snap)
     app_state_lock();
     app_state_t *st = app_state_get();
     st->session_elapsed_s   = snap->session_elapsed_s;
+    // Restaurar el consumo acumulado para que el total del proceso siga sumando
+    // (modo_manual_start / programa_start_session lo habían reseteado a 0).
+    st->session_energy_wh   = snap->session_energy_wh;
+    st->session_fan_on_s    = snap->session_fan_on_s;
 
     // En programas, programa_start_session() reseteó etapa_activa=0 y el
     // setpoint a la etapa 1. Restauramos la etapa donde se cortó la luz y

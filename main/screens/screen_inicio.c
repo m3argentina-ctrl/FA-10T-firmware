@@ -1,10 +1,31 @@
 #include "ui_common.h"
+#include "wifi_config.h"
+#include "wifi_manager.h"
+
+static lv_obj_t *s_owner_scr;
+static lv_obj_t *s_wifi_btn;
+static lv_obj_t *s_wifi_btn_lbl;
 
 static void manual_clicked(lv_event_t *e)    { (void)e; ui_show_screen(UI_SCREEN_PROG_MANUAL); }
 static void programas_clicked(lv_event_t *e) { (void)e; ui_show_screen(UI_SCREEN_PROG_PROGRAMAS); }
 
+// Botón WIFI: abre el modal de configuración de red. Lo conecta el cliente.
+static void wifi_btn_cb(lv_event_t *e) { (void)e; wifi_config_show(); }
+
+// Refresca el color/etiqueta del botón según el estado de conexión (verde =
+// conectado, gris = sin conexión). Corre cada 1 s sólo si INICIO está visible.
+static void wifi_status_cb(lv_timer_t *t)
+{
+    (void)t;
+    if (lv_scr_act() != s_owner_scr || !s_wifi_btn) return;
+    bool conn = wifi_manager_is_connected();
+    lv_obj_set_style_bg_color(s_wifi_btn, conn ? UI_COL_GREEN : UI_COL_GREY_BTN, 0);
+    lv_label_set_text(s_wifi_btn_lbl, conn ? "WIFI OK" : "WIFI");
+}
+
 void screen_inicio_build(lv_obj_t *scr)
 {
+    s_owner_scr = scr;
     ui_left_panel_attach(scr, UI_SCREEN_INICIO);
     lv_obj_t *p = ui_make_right_pane(scr);
 
@@ -14,6 +35,20 @@ void screen_inicio_build(lv_obj_t *scr)
     lv_obj_set_style_text_font(logo, ui_font_xxl(), 0);
     lv_obj_set_style_text_color(logo, UI_COL_ORANGE, 0);
     lv_obj_align(logo, LV_ALIGN_TOP_MID, 0, 8);
+
+    // Botón WIFI arriba a la derecha: lo conecta el cliente a su red. Hace de
+    // indicador de estado (verde = conectado, gris = sin conexión). Se movió
+    // desde AREA TECNICA para que el cliente no necesite el PIN de servicio.
+    s_wifi_btn = lv_btn_create(p);
+    lv_obj_set_size(s_wifi_btn, 60, 24);
+    lv_obj_align(s_wifi_btn, LV_ALIGN_TOP_RIGHT, -2, 2);
+    lv_obj_set_style_bg_color(s_wifi_btn, UI_COL_GREY_BTN, 0);
+    lv_obj_add_event_cb(s_wifi_btn, wifi_btn_cb, LV_EVENT_CLICKED, NULL);
+    s_wifi_btn_lbl = lv_label_create(s_wifi_btn);
+    lv_label_set_text(s_wifi_btn_lbl, "WIFI");
+    lv_obj_set_style_text_font(s_wifi_btn_lbl, ui_font_xs(), 0);
+    lv_obj_set_style_text_color(s_wifi_btn_lbl, UI_COL_WHITE, 0);
+    lv_obj_center(s_wifi_btn_lbl);
 
     lv_obj_t *m1 = lv_label_create(p);
     lv_label_set_text(m1, "MODELO");
@@ -57,4 +92,7 @@ void screen_inicio_build(lv_obj_t *scr)
     lv_obj_set_style_text_font(p_lbl, ui_font_lg(), 0);
     lv_obj_set_style_text_color(p_lbl, UI_COL_WHITE, 0);
     lv_obj_center(p_lbl);
+
+    // Estado WiFi en vivo (verde/gris) mientras esta pantalla esté activa.
+    lv_timer_create(wifi_status_cb, 1000, NULL);
 }

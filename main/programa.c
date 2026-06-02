@@ -98,6 +98,8 @@ esp_err_t programa_start_session(const programa_t *p)
     st->t_min_sesion        =  999.0f;
     st->t_max_sesion        = -999.0f;
     st->warmup_done         = false;
+    st->session_energy_wh   = 0.0f;
+    st->session_fan_on_s    = 0.0f;
     s_elapsed_frac          = 0.0f;
     snprintf(st->nombre_programa, PROG_NAME_MAX, "%s", p->nombre);
     app_state_unlock();

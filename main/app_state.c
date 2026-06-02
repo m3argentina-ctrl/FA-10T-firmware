@@ -26,6 +26,11 @@ static void load_identity_from_nvs(void)
     sz = PIN_LEN_MAX;
     err = nvs_get_str(h, "pin", s_state.pin_servicio, &sz);
     if (err == ESP_OK) ESP_LOGI(TAG, "loaded pin (****) from NVS");
+    uint8_t nm = 0;
+    if (nvs_get_u8(h, "modulos", &nm) == ESP_OK && nm >= 1) {
+        s_state.num_modulos = nm;
+        ESP_LOGI(TAG, "loaded num_modulos=%u from NVS", (unsigned)nm);
+    }
     nvs_close(h);
 }
 
@@ -39,6 +44,7 @@ void app_state_init(void)
     snprintf(s_state.modelo,       MODEL_NAME_MAX, "%s", "IND-26MTO");
     snprintf(s_state.serie,        SERIE_NUM_MAX,  "%s", "-");
     snprintf(s_state.pin_servicio, PIN_LEN_MAX,    "%s", "1234");
+    s_state.num_modulos = 1;   // default: 1 turbina + 1 resistencia
 
     // Si hay valores guardados en NVS, sobreescriben los defaults.
     load_identity_from_nvs();
@@ -95,6 +101,25 @@ esp_err_t app_state_save_pin(const char *pin)
     esp_err_t err = save_identity_field("pin", pin);
     if (err == ESP_OK) ESP_LOGI(TAG, "pin saved");
     else               ESP_LOGE(TAG, "save pin failed: %s", esp_err_to_name(err));
+    return err;
+}
+
+esp_err_t app_state_save_num_modulos(uint8_t n)
+{
+    if (n < 1)            n = 1;
+    if (n > MODULOS_MAX)  n = MODULOS_MAX;
+    app_state_lock();
+    s_state.num_modulos = n;
+    app_state_unlock();
+
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(IDENT_NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) return err;
+    err = nvs_set_u8(h, "modulos", n);
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    if (err == ESP_OK) ESP_LOGI(TAG, "num_modulos saved: %u", (unsigned)n);
+    else               ESP_LOGE(TAG, "save num_modulos failed: %s", esp_err_to_name(err));
     return err;
 }
 

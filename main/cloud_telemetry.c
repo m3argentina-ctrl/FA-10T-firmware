@@ -160,6 +160,7 @@ static esp_err_t push_snapshot(const char *reason)
         "\"op_mode\":%d,\"run_state\":%d,\"warmup\":%d,\"etapa\":%u,"
         "\"elapsed_s\":%lu,\"total_s\":%lu,\"remaining_s\":%lu,"
         "\"t_min\":%.1f,\"t_max\":%.1f,"
+        "\"res_wh\":%.1f,\"fan_on_s\":%.0f,\"num_mod\":%u,"
         "\"prog\":\"%s\",\"modelo\":\"%s\",\"serie\":\"%s\","
         "\"uptime_s\":%lu,"
         "\"hours_total\":%.1f,\"hours_svc\":%.1f,"
@@ -177,6 +178,7 @@ static esp_err_t push_snapshot(const char *reason)
         (unsigned long)s.session_elapsed_s, (unsigned long)s.session_total_s,
         (unsigned long)s.session_remaining_s,
         s.t_min_sesion, s.t_max_sesion,
+        s.session_energy_wh, s.session_fan_on_s, (unsigned)s.num_modulos,
         prog, modelo, serie,
         (unsigned long)s.uptime_s,
         t.hours_total_s / 3600.0f, t.hours_service_s / 3600.0f,

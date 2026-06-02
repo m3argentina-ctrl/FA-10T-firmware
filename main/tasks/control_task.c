@@ -17,6 +17,9 @@
 
 static const char *TAG = "control_task";
 
+// RES_WATTS_PER_MODULE vive ahora en app_config.h (compartido con el LCD, que
+// también necesita la potencia para mostrar los kWh del proceso).
+
 static TaskHandle_t s_handle;
 TaskHandle_t control_task_handle(void) { return s_handle; }
 
@@ -148,6 +151,13 @@ static void control_task(void *arg)
         st->running       = !tripped && now_active;
         if (tripped && st->run_state != RUN_STATE_ALARM) {
             st->run_state = RUN_STATE_ALARM;
+        }
+        // Integrar consumo SOLO mientras la sesión corre (incluye calentamiento).
+        // Pausa/alarma/completado/idle no suman: el duty ya es 0 o el estado no es
+        // RUNNING. Valores por módulo (×Nº módulos en la nube). Acumulador float.
+        if (st->run_state == RUN_STATE_RUNNING) {
+            st->session_energy_wh += RES_WATTS_PER_MODULE * st->ssr_drv_duty * dt / 3600.0f;
+            if (st->ssr_fan_duty > 0.5f) st->session_fan_on_s += dt;
         }
         app_state_unlock();
 
