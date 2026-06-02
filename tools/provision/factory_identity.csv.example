@@ -2,4 +2,4 @@ key,type,encoding,value
 fa10t_cloud,namespace,,
 dev_id,data,string,FA10T-0001
 token,data,string,REEMPLAZAR-POR-TOKEN-UNICO
-cloud_url,data,string,https://app.bioorigen.com
+cloud_url,data,string,https://bioorigen-web.vercel.app

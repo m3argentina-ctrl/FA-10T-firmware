@@ -20,7 +20,7 @@ param(
     [Parameter(Mandatory = $true)] [string] $DevId,
     [Parameter(Mandatory = $true)] [string] $Token,
     [Parameter(Mandatory = $true)] [string] $Port,
-    [string] $CloudUrl = "https://app.bioorigen.com",
+    [string] $CloudUrl = "https://bioorigen-web.vercel.app",
     [string] $PartSize = "0x4000"
 )
 

@@ -16,4 +16,4 @@
 
 #define DEVICE_ID_DEFAULT       "FA10T-DEV-0000"
 #define DEVICE_TOKEN_DEFAULT    "dev-token-cambiar"
-#define CLOUD_BASE_URL_DEFAULT  "https://app.bioorigen.com"
+#define CLOUD_BASE_URL_DEFAULT  "https://bioorigen-web.vercel.app"
