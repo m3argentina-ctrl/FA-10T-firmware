@@ -15,9 +15,77 @@ static const char *TAG = "programa";
 static float s_elapsed_frac;
 static const char *NS  = "fa10t_prog";
 
+// ---------------------------------------------------------------------------
+// Recetas de fábrica. Un equipo NUEVO arranca con este set precargado en vez de
+// slots vacíos. Se siembran UNA sola vez (flag "seed_ver" en NVS); después el
+// usuario tiene control total: si edita o borra una receta, NO se revierte en
+// el próximo arranque. Para empujar nuevas recetas por defecto en un firmware
+// futuro, subir PROG_SEED_VERSION: sólo se rellenan los slots que sigan VACÍOS,
+// nunca se pisa una receta guardada por el usuario.
+//
+// Restricciones: nombre <= 19 chars · setpoint 20–80 °C · duración en segundos.
+// >>> AJUSTAR estos valores a las recetas reales de Bio Origen. <<<
+// ---------------------------------------------------------------------------
+#define PROG_SEED_VERSION 1
+#define SEG_POR_HORA      3600u
+
+typedef struct {
+    const char *nombre;
+    float       sp[PROG_STAGE_COUNT];      // setpoint de cada etapa (°C)
+    uint32_t    dur_s[PROG_STAGE_COUNT];   // duración de cada etapa (s)
+} prog_seed_t;
+
+static const prog_seed_t k_seed[] = {
+    //   nombre        E1   E2   E3            E1               E2               E3
+    { "FRUTAS",     {  60,  55,  50 }, { 2*SEG_POR_HORA, 3*SEG_POR_HORA, 2*SEG_POR_HORA } },
+    { "CITRICOS",   {  55,  55,  50 }, { 3*SEG_POR_HORA, 3*SEG_POR_HORA, 3*SEG_POR_HORA } },
+    { "VERDURAS",   {  55,  52,  50 }, { 2*SEG_POR_HORA, 3*SEG_POR_HORA, 2*SEG_POR_HORA } },
+    { "TOMATE",     {  60,  58,  55 }, { 3*SEG_POR_HORA, 3*SEG_POR_HORA, 3*SEG_POR_HORA } },
+    { "HIERBAS",    {  40,  38,  35 }, { 1*SEG_POR_HORA, 2*SEG_POR_HORA, 1*SEG_POR_HORA } },
+    { "HONGOS",     {  55,  50,  45 }, { 2*SEG_POR_HORA, 2*SEG_POR_HORA, 2*SEG_POR_HORA } },
+};
+
+#undef SEG_POR_HORA
+
+// Siembra las recetas de fábrica si el equipo nunca fue sembrado (o si se subió
+// PROG_SEED_VERSION). No pisa slots que el usuario ya guardó.
+static void seed_defaults(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NS, NVS_READWRITE, &h) != ESP_OK) return;
+    uint8_t ver = 0;
+    nvs_get_u8(h, "seed_ver", &ver);            // ausente => queda en 0
+    nvs_close(h);
+    if (ver >= PROG_SEED_VERSION) return;       // ya sembrado en esta versión
+
+    const size_t n = sizeof(k_seed) / sizeof(k_seed[0]);
+    for (uint8_t slot = 0; slot < n && slot < PROGRAMA_SLOTS; ++slot) {
+        programa_t cur;
+        if (programa_load(slot, &cur) == ESP_OK && cur.used) continue; // no pisar
+
+        programa_t p;
+        memset(&p, 0, sizeof(p));
+        p.used = true;
+        snprintf(p.nombre, PROG_NAME_MAX, "%s", k_seed[slot].nombre);
+        for (int i = 0; i < PROG_STAGE_COUNT; ++i) {
+            p.etapa_sp[i]         = k_seed[slot].sp[i];
+            p.etapa_duration_s[i] = k_seed[slot].dur_s[i];
+        }
+        programa_save(slot, &p);
+    }
+
+    if (nvs_open(NS, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, "seed_ver", PROG_SEED_VERSION);
+        nvs_commit(h);
+        nvs_close(h);
+        ESP_LOGI(TAG, "recetas de fábrica sembradas (v%u)", PROG_SEED_VERSION);
+    }
+}
+
 esp_err_t programa_init(void)
 {
-    // No state to keep in RAM — slots live in NVS only.
+    // Slots viven en NVS; sembramos las recetas de fábrica si el equipo es nuevo.
+    seed_defaults();
     return ESP_OK;
 }
 
