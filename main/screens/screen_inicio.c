@@ -1,4 +1,5 @@
 #include "ui_common.h"
+#include "process_switch.h"
 #include "wifi_config.h"
 #include "wifi_manager.h"
 
@@ -6,8 +7,9 @@ static lv_obj_t *s_owner_scr;
 static lv_obj_t *s_wifi_btn;
 static lv_obj_t *s_wifi_btn_lbl;
 
-static void manual_clicked(lv_event_t *e)    { (void)e; ui_show_screen(UI_SCREEN_PROG_MANUAL); }
-static void programas_clicked(lv_event_t *e) { (void)e; ui_show_screen(UI_SCREEN_PROG_PROGRAMAS); }
+// Pasan por el guard: si hay un proceso vivo, avisa antes de pisarlo.
+static void manual_clicked(lv_event_t *e)    { (void)e; process_switch_request(UI_SCREEN_PROG_MANUAL); }
+static void programas_clicked(lv_event_t *e) { (void)e; process_switch_request(UI_SCREEN_PROG_PROGRAMAS); }
 
 // Botón WIFI: abre el modal de configuración de red. Lo conecta el cliente.
 static void wifi_btn_cb(lv_event_t *e) { (void)e; wifi_config_show(); }

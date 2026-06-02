@@ -1,5 +1,6 @@
 #include "ui_common.h"
 #include "img/img_assets.h"
+#include "process_switch.h"
 
 #include <stdio.h>
 #include "esp_log.h"
@@ -81,7 +82,14 @@ typedef struct {
 static void nav_btn_click_cb(lv_event_t *e)
 {
     ui_screen_id_t id = (ui_screen_id_t)(uintptr_t)lv_event_get_user_data(e);
-    ui_show_screen(id);
+    // MANUAL y PROGRAMAS pueden pisar una sesión en curso → pasan por el guard,
+    // que avisa si hay un proceso vivo (mismo tipo u otro). El resto navega
+    // directo (INICIO/TECNICA/ALARMAS no arrancan ni cortan nada).
+    if (id == UI_SCREEN_PROG_MANUAL || id == UI_SCREEN_PROG_PROGRAMAS) {
+        process_switch_request(id);
+    } else {
+        ui_show_screen(id);
+    }
 }
 
 void ui_left_panel_attach(lv_obj_t *scr, ui_screen_id_t active)

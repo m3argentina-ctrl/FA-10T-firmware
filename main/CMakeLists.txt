@@ -21,6 +21,7 @@ idf_component_register(
         "screens/ui_common.c"
         "screens/ui_keyboard.c"
         "screens/recovery_prompt.c"
+        "screens/process_switch.c"
         "screens/wifi_config.c"
         "screens/img/isologo_64.c"
         "screens/img/logo_300.c"
