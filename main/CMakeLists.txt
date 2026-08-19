@@ -2,7 +2,9 @@ idf_component_register(
     SRCS
         "main.c"
         "app_state.c"
-        "pt1000_adc.c"
+        # pt1000_adc.c — ELIMINADO en la placa v3 (temperatura por DS18B20 1-Wire).
+        # El archivo queda en el repo como referencia histórica, sin compilarse.
+        "ds18b20_bus.c"
         "acs712.c"
         "sht31.c"
         "ssr3ch.c"
@@ -12,19 +14,25 @@ idf_component_register(
         "programa.c"
         "telemetry.c"
         "recovery.c"
+        "humidity_autostop.c"
+        "cooldown.c"
+        "extractor.c"
         "audio.c"
         "gpio_test.c"
         "wifi_manager.c"
         "ble_monitor.c"
         "web_server.c"
+        "ota_update.c"
         "cloud_telemetry.c"
         "screens/ui_common.c"
         "screens/ui_keyboard.c"
         "screens/recovery_prompt.c"
         "screens/process_switch.c"
+        "screens/calib_prompt.c"
         "screens/wifi_config.c"
         "screens/img/isologo_64.c"
         "screens/img/logo_300.c"
+        "screens/img/logo_inicio.c"
         "screens/fonts/font_montserrat_bold_10.c"
         "screens/fonts/font_montserrat_bold_12.c"
         "screens/fonts/font_montserrat_bold_14.c"
@@ -71,6 +79,7 @@ idf_component_register(
         esp_event
         esp_netif
         esp_http_server
+        app_update      # esp_ota_* (actualizacion por WiFi)
         esp_http_client
         esp-tls
         mbedtls

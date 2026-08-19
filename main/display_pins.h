@@ -111,7 +111,7 @@
 // 3V3 (R20, R22, R21). En la PCB FA-10T esos mismos pines llevan:
 //   GPIO9  = I_FAN
 //   GPIO10 = ACS712 V_OUT (ADC1_CH9)
-//   GPIO11 = PT1000 V_ADC (ADC2_CH0)
+//   GPIO11 = (libre — el PT1000 se eliminó en la v3)
 // La presencia simultánea de los pull-ups del board y los divisores resistivos
 // de la PCB hace que ambos lados se interfieran. NO es resoluble por software.
 // -----------------------------------------------------------------------------

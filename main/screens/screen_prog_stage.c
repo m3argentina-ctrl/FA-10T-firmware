@@ -11,6 +11,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <math.h>
 
 // Auto-repeat de los spin buttons. HOLD_DELAY_MS es la espera ANTES del primer
 // auto-repeat: con un valor alto, un toque corto normal (~150-250 ms) ejecuta un
@@ -49,13 +50,28 @@ static uint32_t time_step_for_pulse(uint32_t pulse)
     return 30 * 60;                     // 30 min
 }
 
+// Paso de temperatura con aceleración (igual criterio que el de tiempo): un
+// toque corto (pulse 0) sube 0,1 °C para afinar; manteniendo apretado acelera a
+// 1/2/5 °C para recorrer todo el rango 20-80 °C en un par de segundos.
+static float temp_step_for_pulse(uint32_t pulse)
+{
+    if (pulse <  5) return 0.1f;        // afinado: toque corto = 0,1 °C
+    if (pulse < 15) return 1.0f;
+    if (pulse < 25) return 2.0f;
+    return 5.0f;                        // rápido
+}
+
 static void apply_step(int8_t dir, uint8_t kind, uint32_t pulse)
 {
     prog_wizard_state_t *st = prog_wizard_state();
     uint8_t i = st->current_stage;
     if (kind == 0) {
         float *sp = &st->recipe.etapa_sp[i];
-        *sp += 0.1f * dir;
+        float step = temp_step_for_pulse(pulse);
+        *sp += step * dir;
+        // En modo rápido caemos en grados enteros; el afinado mantiene 0,1 °C.
+        if (step >= 1.0f) *sp = roundf(*sp);
+        else              *sp = roundf(*sp * 10.0f) / 10.0f;
         if (*sp < 20.0f) *sp = 20.0f;
         if (*sp > 80.0f) *sp = 80.0f;
     } else {
@@ -145,7 +161,7 @@ void screen_prog_stage_build(lv_obj_t *scr)
     prog_wizard_state_t *st = prog_wizard_state();
 
     char title_buf[40];
-    snprintf(title_buf, sizeof(title_buf), "%s — ETAPA %u/%u",
+    snprintf(title_buf, sizeof(title_buf), "%s - ETAPA %u/%u",
              st->recipe.nombre,
              (unsigned)(st->current_stage + 1), (unsigned)PROG_STAGE_COUNT);
     s_title = lv_label_create(p);

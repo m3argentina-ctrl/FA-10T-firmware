@@ -125,3 +125,11 @@ CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y
 # mandar el pool estatico de LVGL (128KB) a PSRAM via LV_ATTRIBUTE_LARGE_RAM_ARRAY
 # (ver CMakeLists.txt raiz), liberando 128KB de DRAM interna para WiFi + TLS.
 CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+
+# --- OTA: rollback automatico ------------------------------------------------
+# Con esto la imagen recien instalada arranca en estado PENDING_VERIFY. Si el
+# firmware no llama a esp_ota_mark_app_valid_cancel_rollback() en ese arranque
+# (porque se colgo, entro en panic o no supero el autodiagnostico), el
+# bootloader vuelve SOLO a la particion anterior. Sin esto, una actualizacion
+# fallida deja el equipo muerto en casa del cliente y hay que ir con el cable.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y

@@ -8,6 +8,8 @@
 
 static lv_obj_t *s_owner_scr;
 static lv_obj_t *s_prog_bar, *s_prog_lbl;
+// Cuadros de humedad a la derecha de la barra: H = en vivo, OBJ. = objetivo.
+static lv_obj_t *s_hum_now_lbl, *s_hum_obj_lbl;
 static lv_obj_t *s_etapa_box[PROG_STAGE_COUNT];
 static lv_obj_t *s_etapa_t_lbl[PROG_STAGE_COUNT];
 static lv_obj_t *s_etapa_d_lbl[PROG_STAGE_COUNT];
@@ -54,13 +56,15 @@ static void update_cb(lv_timer_t *t)
                  (unsigned)(s.etapa_activa + 1), (unsigned)PROG_STAGE_COUNT);
         lv_obj_set_style_bg_color(s_prog_bar, UI_COL_YELLOW, 0);
     } else if (s.run_state == RUN_STATE_COMPLETED) {
-        snprintf(buf, sizeof(buf), "COMPLETADO  %s", s.nombre_programa);
-        lv_obj_set_style_bg_color(s_prog_bar, UI_COL_GREEN, 0);
+        snprintf(buf, sizeof(buf), "%s  %s",
+                 s.cooling_active ? "ENFRIANDO" : "COMPLETADO", s.nombre_programa);
+        lv_obj_set_style_bg_color(s_prog_bar,
+                 s.cooling_active ? UI_COL_CYAN : UI_COL_GREEN, 0);
     } else if (!s.warmup_done) {
         snprintf(buf, sizeof(buf), "CALENTANDO  %s", s.nombre_programa);
         lv_obj_set_style_bg_color(s_prog_bar, UI_COL_ORANGE, 0);
     } else {
-        snprintf(buf, sizeof(buf), "%s  —  ETAPA %u/%u", s.nombre_programa,
+        snprintf(buf, sizeof(buf), "%s  -  ETAPA %u/%u", s.nombre_programa,
                  (unsigned)(s.etapa_activa + 1), (unsigned)PROG_STAGE_COUNT);
         lv_obj_set_style_bg_color(s_prog_bar, UI_COL_GREEN, 0);
     }
@@ -114,6 +118,20 @@ static void update_cb(lv_timer_t *t)
         pct = (int32_t)(((uint64_t)s.session_elapsed_s * 100) / s.session_total_s);
     }
     lv_bar_set_value(s_time_bar, pct, LV_ANIM_OFF);
+
+    // Cuadros de humedad: H = valor en vivo, OBJ. = objetivo de la receta.
+    if (s.humidity_fault) {
+        lv_label_set_text(s_hum_now_lbl, "H --");
+    } else {
+        snprintf(buf, sizeof(buf), "H %.0f%%", s.humidity);
+        lv_label_set_text(s_hum_now_lbl, buf);
+    }
+    if (s.humidity_target > 0.0f) {
+        snprintf(buf, sizeof(buf), "OBJ %.0f%%", s.humidity_target);
+        lv_label_set_text(s_hum_obj_lbl, buf);
+    } else {
+        lv_label_set_text(s_hum_obj_lbl, "OBJ --");
+    }
 
     // ON/OFF
     set_onoff(s_res_box, s_res_lbl, s.ssr_drv_duty > 0.05f);
@@ -177,10 +195,14 @@ void screen_func_programas_build(lv_obj_t *scr)
     ui_left_panel_attach(scr, UI_SCREEN_PROG_PROGRAMAS);
     lv_obj_t *p = ui_make_right_pane(scr);
 
-    // y=0..20: barra con nombre programa + etapa
+    // y=0..20: barra con nombre programa + etapa (IZQUIERDA) + 2 cuadros de
+    // humedad (DERECHA), igual que en la pantalla de MANUAL en funcionamiento.
+    // Reparto del ancho (360): 240 barra + 2 + 58 H + 2 + 58 OBJ.
+    const int SBAR_W = 240, HBOX_W = 58, HBOX_GAP = 2;
+
     s_prog_bar = lv_obj_create(p);
     lv_obj_remove_style_all(s_prog_bar);
-    lv_obj_set_size(s_prog_bar, LV_HOR_RES - UI_RIGHT_X, 20);
+    lv_obj_set_size(s_prog_bar, SBAR_W, 28);
     lv_obj_align(s_prog_bar, LV_ALIGN_TOP_LEFT, 0, 0);
     lv_obj_set_style_bg_color(s_prog_bar, UI_COL_GREEN, 0);
     lv_obj_set_style_bg_opa(s_prog_bar, LV_OPA_COVER, 0);
@@ -190,13 +212,36 @@ void screen_func_programas_build(lv_obj_t *scr)
     lv_obj_center(s_prog_lbl);
     lv_label_set_text(s_prog_lbl, "PROGRAMA: -");
 
+    // Cuadro "H" — humedad de cámara en vivo.
+    lv_obj_t *hbox = ui_make_box(p, UI_COL_PANEL_BG, UI_COL_CYAN);
+    lv_obj_set_size(hbox, HBOX_W, 28);
+    lv_obj_align(hbox, LV_ALIGN_TOP_LEFT, SBAR_W + HBOX_GAP, 0);
+    lv_obj_set_style_pad_all(hbox, 0, 0);
+    s_hum_now_lbl = lv_label_create(hbox);
+    lv_obj_set_style_text_font(s_hum_now_lbl, ui_font_sm_bold(), 0);
+    lv_obj_set_style_text_color(s_hum_now_lbl, UI_COL_CYAN, 0);
+    lv_obj_center(s_hum_now_lbl);
+    lv_label_set_text(s_hum_now_lbl, "H --");
+
+    // Cuadro "OBJ." — humedad objetivo de la receta (auto-stop).
+    lv_obj_t *obox = ui_make_box(p, UI_COL_PANEL_BG, UI_COL_LABEL_GREY);
+    lv_obj_set_size(obox, HBOX_W, 28);
+    lv_obj_align(obox, LV_ALIGN_TOP_LEFT,
+                 SBAR_W + HBOX_GAP + HBOX_W + HBOX_GAP, 0);
+    lv_obj_set_style_pad_all(obox, 0, 0);
+    s_hum_obj_lbl = lv_label_create(obox);
+    lv_obj_set_style_text_font(s_hum_obj_lbl, ui_font_sm_bold(), 0);
+    lv_obj_set_style_text_color(s_hum_obj_lbl, UI_COL_LABEL_GREY, 0);
+    lv_obj_center(s_hum_obj_lbl);
+    lv_label_set_text(s_hum_obj_lbl, "OBJ --");
+
     // y=24..64: row de 3 etapas (114 wide × 40 alto, gaps 6)
     const int E_W = 114, E_H = 40, E_GAP = 6;
     for (int i = 0; i < PROG_STAGE_COUNT; ++i) {
         s_etapa_box[i] = ui_make_box(p, UI_COL_PANEL_BG, UI_COL_GREY_BTN);
         lv_obj_set_size(s_etapa_box[i], E_W, E_H);
         lv_obj_align(s_etapa_box[i], LV_ALIGN_TOP_LEFT,
-                     3 + i * (E_W + E_GAP), 24);
+                     3 + i * (E_W + E_GAP), 32);
         lv_obj_set_style_pad_all(s_etapa_box[i], 2, 0);
 
         char hdr[12];
@@ -224,7 +269,7 @@ void screen_func_programas_build(lv_obj_t *scr)
     s_big_temp = lv_label_create(p);
     lv_obj_set_style_text_font(s_big_temp, ui_font_huge(), 0);
     lv_obj_set_style_text_color(s_big_temp, UI_COL_TEMP_RED, 0);
-    lv_obj_align(s_big_temp, LV_ALIGN_TOP_LEFT, 14, 68);
+    lv_obj_align(s_big_temp, LV_ALIGN_TOP_LEFT, 14, 76);
     lv_label_set_text(s_big_temp, "--.-");
 
     s_temp_sp_lbl = lv_label_create(p);
@@ -235,7 +280,7 @@ void screen_func_programas_build(lv_obj_t *scr)
 
     s_temp_bar = lv_bar_create(p);
     lv_obj_set_size(s_temp_bar, 340, 12);
-    lv_obj_align(s_temp_bar, LV_ALIGN_TOP_LEFT, 8, 120);
+    lv_obj_align(s_temp_bar, LV_ALIGN_TOP_LEFT, 8, 128);
     lv_bar_set_range(s_temp_bar, 0, 100);
     lv_obj_set_style_bg_color(s_temp_bar, UI_COL_GREY_BTN, LV_PART_MAIN);
     lv_obj_set_style_bg_color(s_temp_bar, UI_COL_TEMP_RED, LV_PART_INDICATOR);
@@ -246,7 +291,7 @@ void screen_func_programas_build(lv_obj_t *scr)
     s_big_time = lv_label_create(p);
     lv_obj_set_style_text_font(s_big_time, ui_font_huge(), 0);
     lv_obj_set_style_text_color(s_big_time, UI_COL_TIME_BLUE, 0);
-    lv_obj_align(s_big_time, LV_ALIGN_TOP_LEFT, 14, 136);
+    lv_obj_align(s_big_time, LV_ALIGN_TOP_LEFT, 14, 144);
     lv_label_set_text(s_big_time, "00:00:00");
 
     s_time_total_lbl = lv_label_create(p);
@@ -257,7 +302,7 @@ void screen_func_programas_build(lv_obj_t *scr)
 
     s_time_bar = lv_bar_create(p);
     lv_obj_set_size(s_time_bar, 340, 12);
-    lv_obj_align(s_time_bar, LV_ALIGN_TOP_LEFT, 8, 188);
+    lv_obj_align(s_time_bar, LV_ALIGN_TOP_LEFT, 8, 196);
     lv_bar_set_range(s_time_bar, 0, 100);
     lv_obj_set_style_bg_color(s_time_bar, UI_COL_GREY_BTN, LV_PART_MAIN);
     lv_obj_set_style_bg_color(s_time_bar, UI_COL_TIME_BLUE, LV_PART_INDICATOR);
@@ -267,11 +312,11 @@ void screen_func_programas_build(lv_obj_t *scr)
     // y=208..248: row RESISTENCIA | TURBINAS | CONSUMO (3 cajas centradas)
     const int B2_W = 110, B2_GAP = 9;
     int x2 = (LV_HOR_RES - UI_RIGHT_X - (3 * B2_W + 2 * B2_GAP)) / 2;
-    s_res_box = make_info_box(p, "RESISTENCIA", x2,                     208, B2_W,
+    s_res_box = make_info_box(p, "RESISTENCIA", x2, 216, B2_W,
                               UI_COL_GREEN, UI_COL_WHITE, &s_res_lbl);
-    s_fan_box = make_info_box(p, "TURBINAS",    x2 + (B2_W + B2_GAP),   208, B2_W,
+    s_fan_box = make_info_box(p, "TURBINAS",    x2 + (B2_W + B2_GAP), 216, B2_W,
                               UI_COL_GREEN, UI_COL_WHITE, &s_fan_lbl);
-    make_info_box(p, "CONSUMO kWh", x2 + 2*(B2_W + B2_GAP), 208, B2_W,
+    make_info_box(p, "CONSUMO kWh", x2 + 2*(B2_W + B2_GAP), 216, B2_W,
                   UI_COL_GREEN, UI_COL_GREEN, &s_kwh_lbl);
 
     // Bottom: 3 botones

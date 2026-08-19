@@ -10,3 +10,11 @@ storage,    data, spiffs,   ,         0x100000,
 # offsets de ota_0/ota_1/storage (los equipos ya flasheados sólo necesitan
 # re-grabar la tabla + esta región nueva).
 factory,    data, nvs,      ,         0x4000,
+# otadata: 2 sectores donde el bootloader guarda CUÁL de los dos slots
+# (ota_0/ota_1) debe arrancar. SIN esta partición el OTA NO funciona: el
+# bootloader arranca siempre ota_0 y esp_ota_* falla. Va al FINAL a propósito,
+# para no correr los offsets de ota_0/ota_1/storage/factory — así los equipos ya
+# flasheados sólo necesitan re-grabar la tabla, sin rearmar todo el mapa.
+# OJO: la tabla de particiones NO se puede cambiar por OTA. Todo equipo que
+# salga de fábrica TIENE que llevar esta partición o quedará atado al cable.
+otadata,    data, ota,      ,         0x2000,

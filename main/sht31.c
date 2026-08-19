@@ -119,3 +119,73 @@ esp_err_t sht31_read(float *humidity_pct, float *temperature_c)
     return ESP_OK;
 #endif
 }
+
+esp_err_t sht31_heater(bool on)
+{
+    if (!s_ready) return ESP_ERR_INVALID_STATE;
+#if SENSORS_FAKE
+    (void)on;
+    return ESP_OK;
+#else
+    // 0x306D = heater enable, 0x3066 = heater disable
+    const uint8_t cmd_on[2]  = { 0x30, 0x6D };
+    const uint8_t cmd_off[2] = { 0x30, 0x66 };
+    return i2c_master_transmit(s_dev, on ? cmd_on : cmd_off, 2, 100);
+#endif
+}
+
+esp_err_t sht31_read_managed(float *humidity_pct, float *temperature_c, bool *valid)
+{
+    if (!valid || !humidity_pct || !temperature_c) return ESP_ERR_INVALID_ARG;
+    *valid = false;
+
+#if !SHT31_HEATER_ENABLE
+    esp_err_t err = sht31_read(humidity_pct, temperature_c);
+    if (err == ESP_OK) *valid = true;
+    return err;
+#else
+    static int     s_phase;                                       // 0 normal, 1 heating, 2 settle
+    static float   s_timer_s;
+    static float   s_since_pulse_s = SHT31_HEATER_MIN_INTERVAL_S; // permite pulso al arranque
+    static int64_t s_last_us;
+
+    int64_t now = esp_timer_get_time();
+    float dt = (s_last_us != 0) ? (float)(now - s_last_us) / 1.0e6f : 0.0f;
+    s_last_us = now;
+    if (dt < 0.0f || dt > 5.0f) dt = 1.0f;   // guarda contra saltos de reloj
+    s_timer_s       += dt;
+    s_since_pulse_s += dt;
+
+    if (s_phase == 1) {                       // heater ON: no leer (lectura calentada)
+        if (s_timer_s >= SHT31_HEATER_ON_S) {
+            sht31_heater(false);
+            s_phase   = 2;
+            s_timer_s = 0.0f;
+        }
+        return ESP_OK;                        // *valid = false → caller mantiene último valor
+    }
+    if (s_phase == 2) {                       // enfriando: todavía no confiable
+        if (s_timer_s >= SHT31_HEATER_SETTLE_S) {
+            s_phase         = 0;
+            s_since_pulse_s = 0.0f;
+        }
+        return ESP_OK;                        // *valid = false
+    }
+
+    // Fase normal: lectura real.
+    esp_err_t err = sht31_read(humidity_pct, temperature_c);
+    if (err != ESP_OK) return err;
+    *valid = true;
+
+    // ¿Condensación? RH muy alta sostenida → pulsar el heater (respetando el
+    // intervalo mínimo entre pulsos).
+    if (*humidity_pct >= SHT31_HEATER_RH_TRIGGER &&
+        s_since_pulse_s >= SHT31_HEATER_MIN_INTERVAL_S) {
+        sht31_heater(true);
+        s_phase   = 1;
+        s_timer_s = 0.0f;
+        ESP_LOGI(TAG, "SHT31 heater pulse (RH=%.1f%%)", (double)*humidity_pct);
+    }
+    return ESP_OK;
+#endif
+}

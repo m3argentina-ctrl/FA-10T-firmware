@@ -10,7 +10,10 @@ extern "C" {
 
 // Begin a manual session. Setpoint in °C, duration in seconds. Switches
 // op_mode = MANUAL, run_state = RUNNING, energises fans, gates PID on.
-esp_err_t modo_manual_start(float setpoint_c, uint32_t duration_s);
+// hum_target_pct: %RH objetivo para auto-stop por humedad. 0 = OFF (corre por
+// tiempo, como siempre). >0 = el proceso completa al bajar a esa humedad de
+// forma sostenida; duration_s queda como tope máximo de seguridad.
+esp_err_t modo_manual_start(float setpoint_c, uint32_t duration_s, float hum_target_pct);
 
 // Soft pause: PID setpoint goes to 0, SSR_DRV stays off, SSR_FAN stays off.
 // Countdown is frozen. run_state = PAUSED.

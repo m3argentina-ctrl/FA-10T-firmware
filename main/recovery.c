@@ -90,6 +90,7 @@ void recovery_tick(float dt_s)
             snap.recipe.etapa_sp[i]         = st->etapa_sp[i];
             snap.recipe.etapa_duration_s[i] = st->etapa_duration_s[i];
         }
+        snap.recipe.humedad_objetivo = st->humidity_target;   // preservar auto-stop por humedad
     }
     app_state_unlock();
 
@@ -128,7 +129,8 @@ esp_err_t recovery_resume_from(const recovery_snapshot_t *snap)
         uint32_t total = 0;
         for (int i = 0; i < PROG_STAGE_COUNT; ++i)
             total += snap->recipe.etapa_duration_s[i];
-        esp_err_t err = modo_manual_start(snap->recipe.etapa_sp[0], total);
+        esp_err_t err = modo_manual_start(snap->recipe.etapa_sp[0], total,
+                                          snap->recipe.humedad_objetivo);
         if (err != ESP_OK) return err;
     } else if (snap->op_mode == OP_MODE_PROGRAMS) {
         esp_err_t err = programa_start_session(&snap->recipe);
@@ -159,8 +161,13 @@ esp_err_t recovery_resume_from(const recovery_snapshot_t *snap)
     }
 
     if (st->session_elapsed_s >= st->session_total_s) {
+        // Defensivo (los snapshots solo se guardan con la sesión viva, así que
+        // no debería pasar): si igual llegara completo, NO dejar el setpoint
+        // activo — el heater quedaría encendido con la sesión "terminada".
         st->session_remaining_s = 0;
         st->run_state           = RUN_STATE_COMPLETED;
+        st->effective_setpoint  = 0.0f;
+        st->fan_command_on      = false;
     } else {
         st->session_remaining_s = st->session_total_s - snap->session_elapsed_s;
     }

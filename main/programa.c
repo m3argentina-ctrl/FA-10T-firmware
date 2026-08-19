@@ -8,6 +8,7 @@
 
 #include "app_config.h"   // SAFETY_HYSTERESIS_C
 #include "audio.h"
+#include "telemetry.h"
 
 static const char *TAG = "programa";
 
@@ -97,6 +98,10 @@ static void slot_key(uint8_t slot, char out[8])
 esp_err_t programa_load(uint8_t slot, programa_t *out)
 {
     if (slot >= PROGRAMA_SLOTS || !out) return ESP_ERR_INVALID_ARG;
+    // Cero ANTES de leer: si la receta guardada es de un firmware viejo (blob
+    // más chico, sin humedad_objetivo), los campos nuevos quedan en 0 (=OFF) en
+    // vez de basura. Migración transparente.
+    memset(out, 0, sizeof(*out));
     nvs_handle_t h;
     esp_err_t err = nvs_open(NS, NVS_READONLY, &h);
     if (err != ESP_OK) return err;
@@ -163,6 +168,8 @@ esp_err_t programa_start_session(const programa_t *p)
     st->session_remaining_s = total;
     st->effective_setpoint  = p->etapa_sp[0];
     st->fan_command_on      = true;
+    st->humidity_target     = p->humedad_objetivo;   // auto-stop por humedad (0 = OFF)
+    st->cooling_active      = false;
     st->t_min_sesion        =  999.0f;
     st->t_max_sesion        = -999.0f;
     st->warmup_done         = false;
@@ -171,6 +178,8 @@ esp_err_t programa_start_session(const programa_t *p)
     s_elapsed_frac          = 0.0f;
     snprintf(st->nombre_programa, PROG_NAME_MAX, "%s", p->nombre);
     app_state_unlock();
+
+    telemetry_note_session_start();
 
     ESP_LOGI(TAG, "session start '%s' total=%lus stages=[%.1f/%lus, %.1f/%lus, %.1f/%lus]",
              p->nombre, (unsigned long)total,
@@ -220,17 +229,24 @@ esp_err_t programa_stop(void)
         app_state_unlock();
         return ESP_ERR_INVALID_STATE;
     }
+    // Sesión viva detenida a mano = lote interrumpido.
+    bool was_live = (st->run_state == RUN_STATE_RUNNING ||
+                     st->run_state == RUN_STATE_PAUSED);
     st->op_mode            = OP_MODE_IDLE;
     st->run_state          = RUN_STATE_IDLE;
     st->effective_setpoint = 0.0f;
     st->fan_command_on     = false;
+    st->cooling_active     = false;
     app_state_unlock();
+    if (was_live) telemetry_note_session_end(false);
     ESP_LOGW(TAG, "programs stopped");
     return ESP_OK;
 }
 
 void programa_tick(float dt_s)
 {
+    bool completed_now = false;
+
     app_state_lock();
     app_state_t *st = app_state_get();
     if (st->op_mode != OP_MODE_PROGRAMS || st->run_state != RUN_STATE_RUNNING) {
@@ -279,9 +295,11 @@ void programa_tick(float dt_s)
         st->session_elapsed_s   = st->session_total_s;
         st->session_remaining_s = 0;
         st->effective_setpoint  = 0.0f;
-        st->fan_command_on      = false;
-        ESP_LOGI(TAG, "session '%s' COMPLETED — sounding alarm", st->nombre_programa);
-        audio_alarm_done();
+        // Enfriamiento post-proceso: fan sigue hasta que T caiga al objetivo
+        // (o tope); lo gobierna cooldown_tick().
+        st->fan_command_on      = true;
+        st->cooling_active      = true;
+        completed_now           = true;
     } else {
         if (new_stage != st->etapa_activa) {
             ESP_LOGI(TAG, "stage transition %u → %u, SP %.1f → %.1f",
@@ -293,6 +311,13 @@ void programa_tick(float dt_s)
         st->session_remaining_s = st->session_total_s - st->session_elapsed_s;
     }
     app_state_unlock();
+
+    // Fuera del lock: telemetry escribe NVS (lento); audio va por cola.
+    if (completed_now) {
+        ESP_LOGI(TAG, "session COMPLETED — sounding alarm");
+        audio_alarm_done();
+        telemetry_note_session_end(true);
+    }
 }
 
 bool programa_active(void)

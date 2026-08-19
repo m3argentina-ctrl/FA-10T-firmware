@@ -41,8 +41,12 @@ esp_err_t safety_wdt_feed(void);
 esp_err_t safety_wdt_unsubscribe(void);
 
 // Feed the runaway / overtemp / fan-fault detector. Call each control cycle.
-// fan_fault: caller-supplied, true if turbine current < 70% nominal.
-uint32_t safety_evaluate(float temperature, float duty, float dt_s,
+// temperature:       sonda de control (aire) → límite SAFETY_TEMP_MAX_C (85 °C).
+// limit_temperature: máx del bus 1-Wire (sonda junto a las resistencias) →
+//                    límite SAFETY_LIMIT_TEMP_C (90 °C). Pasar 0 si no aplica.
+// fan_fault:         caller-supplied, true if turbine current < 70% nominal.
+uint32_t safety_evaluate(float temperature, float limit_temperature,
+                         float duty, float dt_s,
                          bool sensor_fault, bool fan_fault);
 
 uint32_t safety_get_faults(void);

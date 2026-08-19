@@ -9,6 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "ssr3ch.h"
+#include "app_config.h"
 
 static const char *TAG = "safety";
 
@@ -108,7 +109,8 @@ static void start_recovery_ramp(void)
     ESP_LOGI(TAG, "recovery: SSRs re-enabled, soft-start ramp %.1fs", s.cfg.recovery_ramp_s);
 }
 
-uint32_t safety_evaluate(float temperature, float duty, float dt_s,
+uint32_t safety_evaluate(float temperature, float limit_temperature,
+                         float duty, float dt_s,
                          bool sensor_fault, bool fan_fault)
 {
     safety_lock();
@@ -125,15 +127,31 @@ uint32_t safety_evaluate(float temperature, float duty, float dt_s,
     }
 
     if (!sensor_fault && temperature > s.cfg.temp_max_c) {
+        ESP_LOGE(TAG, "OVERTEMP promedio: T=%.2f > max=%.2f (limit=%.2f)",
+                 (double)temperature, (double)s.cfg.temp_max_c, (double)limit_temperature);
         trip(SAFETY_OVERTEMP, "over-temperature", true);
     } else if (!sensor_fault &&
                temperature >= (s.cfg.temp_max_c - s.cfg.hysteresis_c)) {
         s.faults |= SAFETY_WARN_NEAR_LIMIT;
     }
 
+    // OVERTEMP sobre la sonda de aire MÁS CALIENTE (el PID controla sobre el
+    // promedio, pero la seguridad mira la peor de las dos). Umbral
+    // SAFETY_LIMIT_TEMP_C = 85 °C. La seguridad de HARDWARE la da un termostato
+    // mecánico de 95 °C en serie con las resistencias (independiente del micro).
+    if (limit_temperature > SAFETY_LIMIT_TEMP_C) {
+        ESP_LOGE(TAG, "OVERTEMP sonda: Tmax=%.2f > limite=%.2f (promedio=%.2f)",
+                 (double)limit_temperature, (double)SAFETY_LIMIT_TEMP_C, (double)temperature);
+        trip(SAFETY_OVERTEMP, "air over-temperature (hottest probe)", true);
+    }
+
     // Runaway: with the heater SSR essentially OFF, T must NOT rise faster
     // than runaway_dt_c within runaway_window_s. This catches a shorted SSR
     // or stuck-on heater that the controller can no longer modulate.
+#if SAFETY_BENCH_TEST
+    // BANCO: detector desactivado (ver SAFETY_BENCH_TEST en app_config.h).
+    s.runaway_armed = false;
+#else
     if (!sensor_fault && duty <= s.cfg.runaway_duty_thr) {
         if (!s.runaway_armed) {
             s.runaway_armed      = true;
@@ -153,6 +171,7 @@ uint32_t safety_evaluate(float temperature, float duty, float dt_s,
     } else {
         s.runaway_armed = false;
     }
+#endif
 
     if ((s.faults & SAFETY_TRIP_MASK) == 0 &&
         (s.latched & SAFETY_TRIP_MASK) == 0 &&

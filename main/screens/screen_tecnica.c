@@ -1,5 +1,6 @@
 #include "ui_common.h"
 #include "ui_keyboard.h"
+#include "calib_prompt.h"
 #include "app_state.h"
 #include "telemetry.h"
 #include "nvs_config.h"
@@ -244,16 +245,10 @@ static void autotune_cb(lv_event_t *e)
     telemetry_log_event(TELEM_EVT_SERVICE, "autotune requested (stub)");
 }
 
-static void calibrar_cb(lv_event_t *e)
-{
-    (void)e;
-    fa10t_config_t cfg;
-    nvs_config_load(&cfg);
-    cfg.cal_offset += 0.1f;
-    nvs_config_save(&cfg);
-    app_state_set_config(&cfg);
-    ESP_LOGI("calibrar", "cal_offset → %+.2f °C", cfg.cal_offset);
-}
+// El botón CALIBRAR se quitó de esta pantalla (v3): la temperatura la dan
+// sondas DS18B20 digitales, calibradas de fábrica, así que el asistente de
+// 2 puntos (que era para el PT1000) ya no hace falta. El módulo calib_prompt
+// sigue en el proyecto por si se necesita un trim en el futuro.
 
 // RESET SVC abre un modal de confirmación (botón chico, fácil de tocar sin
 // querer). El reset real se hace al confirmar; ver confirm_yes_cb / modal abajo.
@@ -611,16 +606,18 @@ void screen_tecnica_build(lv_obj_t *scr)
     lv_obj_set_style_text_color(bpl, UI_COL_WHITE, 0);
     lv_obj_center(bpl);
 
-    // Action buttons (bottom) — 5 botones: SALIR + 4 acciones.
+    // Action buttons (bottom) — 4 botones: SALIR + 3 acciones (CALIBRAR se quitó
+    // en la v3, ver nota arriba). Los 4 se reparten todo el ancho del panel:
+    //   4 botones × 85 + 3 gaps × 4 = 352, con márgenes de 4 → 360 exactos.
+    // Al ser más anchos entran con font sm (12 px) en vez de xs (10), más legible.
     static const struct { const char *txt; uint32_t col_hex; lv_event_cb_t cb; } acts[] = {
         { "SALIR",       0xD32F2F, salir_cb          },
         { "AUTOTUNE",    0x2196F3, autotune_cb       },
-        { "CALIBRAR",    0xE87A20, calibrar_cb       },
         { "RESET SVC",   0x2E9E3B, reset_service_cb  },
         { "CAMBIAR PIN", 0x6A1B9A, cambiar_pin_cb    },
     };
     const int N = sizeof(acts) / sizeof(acts[0]);
-    const int BTN_W = 66, GAP = 4;
+    const int BTN_W = 85, GAP = 4;
     for (int i = 0; i < N; ++i) {
         lv_obj_t *b = lv_btn_create(p);
         lv_obj_set_size(b, BTN_W, 30);
@@ -629,7 +626,7 @@ void screen_tecnica_build(lv_obj_t *scr)
         lv_obj_add_event_cb(b, acts[i].cb, LV_EVENT_CLICKED, NULL);
         lv_obj_t *bl = lv_label_create(b);
         lv_label_set_text(bl, acts[i].txt);
-        lv_obj_set_style_text_font(bl, ui_font_xs(), 0);
+        lv_obj_set_style_text_font(bl, ui_font_sm(), 0);
         lv_obj_set_style_text_color(bl, UI_COL_WHITE, 0);
         lv_obj_center(bl);
     }

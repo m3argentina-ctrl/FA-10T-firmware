@@ -16,7 +16,7 @@ static const char *fault_name(uint32_t mask)
     if (mask & SAFETY_OVERTEMP)     return "SOBRETEMPERATURA";
     if (mask & SAFETY_RUNAWAY)      return "RUNAWAY TERMICO";
     if (mask & SAFETY_FAN_FAULT)    return "FALLA DE TURBINA";
-    if (mask & SAFETY_SENSOR_FAULT) return "FALLA SENSOR PT1000";
+    if (mask & SAFETY_SENSOR_FAULT) return "FALLA SONDA TEMP.";
     if (mask & SAFETY_WDT_TIMEOUT)  return "WATCHDOG TIMEOUT";
     return "SIN ALARMA";
 }

@@ -6,6 +6,7 @@
 #include "app_config.h"   // SAFETY_HYSTERESIS_C
 #include "app_state.h"
 #include "audio.h"
+#include "telemetry.h"
 
 static const char *TAG = "modo_manual";
 
@@ -13,7 +14,7 @@ static const char *TAG = "modo_manual";
 // castear a uint32 y session_elapsed_s nunca avanzaba.
 static float s_elapsed_frac;
 
-esp_err_t modo_manual_start(float setpoint_c, uint32_t duration_s)
+esp_err_t modo_manual_start(float setpoint_c, uint32_t duration_s, float hum_target_pct)
 {
     if (setpoint_c < 1.0f || duration_s == 0) return ESP_ERR_INVALID_ARG;
 
@@ -24,11 +25,20 @@ esp_err_t modo_manual_start(float setpoint_c, uint32_t duration_s)
     st->etapa_activa        = 0;
     st->etapa_sp[0]         = setpoint_c;
     st->etapa_duration_s[0] = duration_s;
+    // Limpiar las etapas 2-3: pueden retener valores de una receta anterior y
+    // el snapshot de recovery las guarda todas — al reanudar un MANUAL tras un
+    // corte de luz, el total se calcula sumando las 3 (duración fantasma).
+    for (int i = 1; i < PROG_STAGE_COUNT; ++i) {
+        st->etapa_sp[i]         = 0.0f;
+        st->etapa_duration_s[i] = 0;
+    }
     st->session_total_s     = duration_s;
     st->session_elapsed_s   = 0;
     st->session_remaining_s = duration_s;
     st->effective_setpoint  = setpoint_c;
     st->fan_command_on      = true;
+    st->humidity_target     = hum_target_pct;   // auto-stop por humedad (0 = OFF)
+    st->cooling_active      = false;
     st->t_min_sesion        =  999.0f;
     st->t_max_sesion        = -999.0f;
     st->warmup_done         = false;
@@ -38,7 +48,13 @@ esp_err_t modo_manual_start(float setpoint_c, uint32_t duration_s)
     snprintf(st->nombre_programa, PROG_NAME_MAX, "%s", "MANUAL");
     app_state_unlock();
 
-    ESP_LOGI(TAG, "manual start: SP=%.1f°C duration=%lus", setpoint_c, (unsigned long)duration_s);
+    telemetry_note_session_start();
+
+    if (hum_target_pct > 0.0f)
+        ESP_LOGI(TAG, "manual start: SP=%.1f°C dur=%lus (tope) humedad obj=%.0f%%",
+                 setpoint_c, (unsigned long)duration_s, hum_target_pct);
+    else
+        ESP_LOGI(TAG, "manual start: SP=%.1f°C duration=%lus", setpoint_c, (unsigned long)duration_s);
     return ESP_OK;
 }
 
@@ -82,18 +98,25 @@ esp_err_t modo_manual_stop(void)
         app_state_unlock();
         return ESP_ERR_INVALID_STATE;
     }
+    // Sesión viva detenida a mano = lote interrumpido (COMPLETED/etc. no cuentan).
+    bool was_live = (st->run_state == RUN_STATE_RUNNING ||
+                     st->run_state == RUN_STATE_PAUSED);
     st->op_mode            = OP_MODE_IDLE;
     st->run_state          = RUN_STATE_IDLE;
     st->effective_setpoint = 0.0f;
     st->fan_command_on     = false;
+    st->cooling_active     = false;
     st->session_remaining_s = 0;
     app_state_unlock();
+    if (was_live) telemetry_note_session_end(false);
     ESP_LOGW(TAG, "manual stopped");
     return ESP_OK;
 }
 
 void modo_manual_tick(float dt_s)
 {
+    bool completed_now = false;
+
     app_state_lock();
     app_state_t *st = app_state_get();
     bool active   = (st->op_mode == OP_MODE_MANUAL);
@@ -122,9 +145,11 @@ void modo_manual_tick(float dt_s)
                 st->session_remaining_s = 0;
                 st->run_state           = RUN_STATE_COMPLETED;
                 st->effective_setpoint  = 0.0f;
-                st->fan_command_on      = false;
-                ESP_LOGI(TAG, "session COMPLETED — sounding alarm");
-                audio_alarm_done();
+                // Enfriamiento post-proceso: el fan sigue ventilando hasta que
+                // T caiga al objetivo (o tope); lo gobierna cooldown_tick().
+                st->fan_command_on      = true;
+                st->cooling_active      = true;
+                completed_now           = true;
             } else {
                 st->session_remaining_s = st->session_total_s - st->session_elapsed_s;
             }
@@ -134,6 +159,13 @@ void modo_manual_tick(float dt_s)
         if (t_now > st->t_max_sesion) st->t_max_sesion = t_now;
     }
     app_state_unlock();
+
+    // Fuera del lock: audio va por cola, pero telemetry escribe NVS (lento).
+    if (completed_now) {
+        ESP_LOGI(TAG, "session COMPLETED — sounding alarm");
+        audio_alarm_done();
+        telemetry_note_session_end(true);
+    }
 }
 
 bool modo_manual_active(void)

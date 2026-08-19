@@ -6,6 +6,7 @@
 #include "ui_common.h"
 #include "ui_keyboard.h"
 #include "prog_wizard.h"
+#include "app_config.h"   // HUM_TARGET_MIN_PCT / MAX_PCT
 
 #include "esp_log.h"
 #include <stdio.h>
@@ -14,6 +15,38 @@
 static const char *TAG = "ui_resumen";
 
 static lv_obj_t *s_name_ta;        // textarea visible en la pantalla
+static lv_obj_t *s_hum_val_lbl;    // valor del objetivo de humedad de la receta
+
+// --- Humedad objetivo de la receta (auto-stop). OFF = corre por tiempo. ---
+static void refresh_hum_val(void)
+{
+    if (!s_hum_val_lbl) return;
+    prog_wizard_state_t *st = prog_wizard_state();
+    if (st->recipe.humedad_objetivo <= 0.0f) {
+        lv_label_set_text(s_hum_val_lbl, "OFF");
+    } else {
+        char b[12];
+        snprintf(b, sizeof(b), "%.0f%%", st->recipe.humedad_objetivo);
+        lv_label_set_text(s_hum_val_lbl, b);
+    }
+}
+
+static void hum_step(int dir)
+{
+    prog_wizard_state_t *st = prog_wizard_state();
+    float v = st->recipe.humedad_objetivo;
+    if (dir > 0) {
+        v = (v <= 0.0f) ? HUM_TARGET_MIN_PCT : v + 1.0f;
+        if (v > HUM_TARGET_MAX_PCT) v = HUM_TARGET_MAX_PCT;
+    } else {
+        v = (v <= HUM_TARGET_MIN_PCT) ? 0.0f : v - 1.0f;   // bajo el mínimo = OFF
+    }
+    st->recipe.humedad_objetivo = v;
+    refresh_hum_val();
+}
+
+static void hum_minus_cb(lv_event_t *e) { (void)e; hum_step(-1); }
+static void hum_plus_cb(lv_event_t *e)  { (void)e; hum_step(+1); }
 
 // --- Sincronización entre textarea visible y buffer del wizard ---
 static void sync_name_to_recipe(void)
@@ -99,7 +132,7 @@ void screen_prog_resumen_build(lv_obj_t *scr)
     prog_wizard_state_t *st = prog_wizard_state();
 
     char tbuf[40];
-    snprintf(tbuf, sizeof(tbuf), "RESUMEN — slot %u", (unsigned)(st->slot + 1));
+    snprintf(tbuf, sizeof(tbuf), "RESUMEN - slot %u", (unsigned)(st->slot + 1));
     lv_obj_t *title = lv_label_create(p);
     lv_label_set_text(title, tbuf);
     lv_obj_set_style_text_font(title, ui_font_lg(), 0);
@@ -150,6 +183,42 @@ void screen_prog_resumen_build(lv_obj_t *scr)
     lv_obj_set_style_text_font(el, ui_font_sm(), 0);
     lv_obj_set_style_text_color(el, UI_COL_WHITE, 0);
     lv_obj_center(el);
+
+    // --- Humedad objetivo (auto-stop). OFF = la receta corre por tiempo. ---
+    lv_obj_t *hum_cap = lv_label_create(p);
+    lv_label_set_text(hum_cap, "HUMEDAD OBJ.");
+    lv_obj_set_style_text_font(hum_cap, ui_font_sm(), 0);
+    lv_obj_set_style_text_color(hum_cap, UI_COL_LABEL_GREY, 0);
+    lv_obj_align(hum_cap, LV_ALIGN_TOP_LEFT, 8, 208);
+
+    lv_obj_t *hm = lv_btn_create(p);
+    lv_obj_set_size(hm, 46, 34);
+    lv_obj_align(hm, LV_ALIGN_TOP_LEFT, 118, 202);
+    lv_obj_set_style_bg_color(hm, UI_COL_CYAN, 0);
+    lv_obj_add_event_cb(hm, hum_minus_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *hml = lv_label_create(hm);
+    lv_label_set_text(hml, "-");
+    lv_obj_set_style_text_font(hml, ui_font_xl(), 0);
+    lv_obj_set_style_text_color(hml, UI_COL_WHITE, 0);
+    lv_obj_center(hml);
+
+    s_hum_val_lbl = lv_label_create(p);
+    lv_obj_set_style_text_font(s_hum_val_lbl, ui_font_lg(), 0);
+    lv_obj_set_style_text_color(s_hum_val_lbl, UI_COL_CYAN, 0);
+    lv_obj_align(s_hum_val_lbl, LV_ALIGN_TOP_LEFT, 178, 208);
+
+    lv_obj_t *hp = lv_btn_create(p);
+    lv_obj_set_size(hp, 46, 34);
+    lv_obj_align(hp, LV_ALIGN_TOP_LEFT, 248, 202);
+    lv_obj_set_style_bg_color(hp, UI_COL_CYAN, 0);
+    lv_obj_add_event_cb(hp, hum_plus_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *hpl = lv_label_create(hp);
+    lv_label_set_text(hpl, "+");
+    lv_obj_set_style_text_font(hpl, ui_font_xl(), 0);
+    lv_obj_set_style_text_color(hpl, UI_COL_WHITE, 0);
+    lv_obj_center(hpl);
+
+    refresh_hum_val();
 
     // ATRÁS / GRABAR / INICIAR
     lv_obj_t *back = lv_btn_create(p);

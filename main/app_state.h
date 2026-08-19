@@ -22,8 +22,10 @@ extern "C" {
 #define MODULOS_MAX           16     // tope de módulos turbina+resistencia (línea comercial)
 
 typedef struct {
-    float    temperature;     // °C, after calibration
-    float    raw_temperature; // °C, pre-calibration
+    float    temperature;       // °C, after calibration (sonda de control → PID)
+    float    raw_temperature;   // °C, pre-calibration
+    float    limit_temperature; // °C, máx del bus 1-Wire (sonda junto a las
+                                // resistencias) → límite de seguridad de 90 °C
     bool     fault;
     uint8_t  fault_status;
     uint64_t timestamp_us;
@@ -72,6 +74,17 @@ typedef struct {
     // fan_command_on is true. modo_manual / programa update both.
     float           effective_setpoint;
     bool            fan_command_on;
+
+    // Auto-stop por humedad: %RH objetivo de la sesión. 0 = OFF (corre por
+    // tiempo). >0 = el proceso completa cuando la humedad de cámara baja a este
+    // valor de forma sostenida. Lo setean modo_manual_start / programa_start_session.
+    float           humidity_target;
+
+    // Enfriamiento post-proceso: true mientras, ya COMPLETADO, las turbinas
+    // siguen ventilando hasta que T caiga a COOLDOWN_TARGET_FRACTION × último
+    // SP (o venza el tope). Lo setean los puntos de completado; lo apaga
+    // cooldown_tick(). La UI muestra "ENFRIANDO".
+    bool            cooling_active;
 
     // 3-stage recipe shared by MANUAL (stage 0 only) and PROGRAMS (all 3).
     uint8_t         etapa_activa;

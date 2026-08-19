@@ -19,6 +19,7 @@
          align-items:center;gap:10px;z-index:10}
   header h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.5px}
   header .id{font-size:12px;color:var(--muted);margin-left:auto;text-align:right;line-height:1.3}
+  header .id .devid{color:var(--cyan);font-weight:700;font-size:14px;letter-spacing:.3px}
   .dot{width:10px;height:10px;border-radius:50%;background:var(--red);flex:0 0 auto;
        box-shadow:0 0 0 3px #ffffff10}
   .dot.ok{background:var(--green)}
@@ -67,7 +68,7 @@
 <header>
   <span id="dot" class="dot"></span>
   <h1>Control ESP32-S3 · MONITOR</h1>
-  <div class="id"><div id="modelo">—</div><div id="serie">—</div></div>
+  <div class="id"><div id="devid" class="devid">—</div><div id="modelo">—</div><div id="serie">—</div></div>
 </header>
 
 <main>
@@ -93,7 +94,7 @@
       <div class="out"><span class="lbl">Extractor</span><div class="bar"><div id="baux" class="fill f-aux"></div></div><span class="v"><span id="aux">0</span>%</span></div>
     </div>
     <div class="grid" style="margin-top:14px">
-      <div class="kv"><div class="k">Humedad</div><div class="val"><span id="hum">--</span>%</div></div>
+      <div class="kv"><div class="k">Humedad</div><div class="val"><span id="hum">--</span>% · obj <span id="humtgt">--</span>%</div></div>
       <div class="kv"><div class="k">T mín sesión</div><div class="val"><span id="tmin">--</span>°</div></div>
       <div class="kv"><div class="k">T máx sesión</div><div class="val"><span id="tmax">--</span>°</div></div>
       <div class="kv"><div class="k">Uptime</div><div class="val" id="uptime">—</div></div>
@@ -143,9 +144,11 @@ async function tick(){
     $('temp').textContent=d.temp.toFixed(1);
     $('sp').textContent=d.sp_eff.toFixed(0);
     $('modo').textContent=MODO[d.op_mode]||'—';
+    $('devid').textContent=d.dev_id||'—';
     $('modelo').textContent=d.modelo||'—';
     $('serie').textContent=d.serie||'—';
     $('ip').textContent=d.ip||'';
+    document.title=(d.dev_id?d.dev_id+' · ':'')+'Control ESP32-S3';
 
     let est=RUN[d.run_state]||'—', cls=RUNCLS[d.run_state]||'idle';
     if(d.run_state===2 && d.warmup===0){est='Calentando';cls='warm';}
@@ -162,6 +165,7 @@ async function tick(){
     setbar('drv','bdrv',d.drv); setbar('fan','bfan',d.fan); setbar('aux','baux',d.aux);
 
     $('hum').textContent = d.hum_fault? '—' : d.hum.toFixed(0);
+    $('humtgt').textContent = (d.hum_tgt>0)? d.hum_tgt.toFixed(0) : '—';
     $('tmin').textContent=isFinite(d.t_min)?d.t_min.toFixed(0):'--';
     $('tmax').textContent=isFinite(d.t_max)?d.t_max.toFixed(0):'--';
     $('uptime').textContent=hms(d.uptime_s);

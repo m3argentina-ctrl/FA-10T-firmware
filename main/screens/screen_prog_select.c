@@ -44,7 +44,7 @@ static void modal_open(uint8_t slot, const programa_t *p)
     s_modal_slot = slot;
 
     char title_buf[48];
-    snprintf(title_buf, sizeof(title_buf), "PROG %u — %s",
+    snprintf(title_buf, sizeof(title_buf), "PROG %u - %s",
              (unsigned)(slot + 1), p->nombre);
     lv_label_set_text(s_modal_title, title_buf);
 

@@ -9,6 +9,10 @@
 // Widgets actualizados desde update_cb cada 500 ms.
 static lv_obj_t *s_owner_scr;
 static lv_obj_t *s_state_bar, *s_state_lbl;
+// Cuadros de humedad a la derecha de la barra de estado: H = valor en vivo,
+// OBJ. = objetivo de la sesión (auto-stop por humedad).
+static lv_obj_t *s_hum_now_box, *s_hum_bar_lbl;
+static lv_obj_t *s_hum_obj_box, *s_hum_obj_lbl;
 static lv_obj_t *s_sp_lbl, *s_tprog_lbl, *s_tmin_lbl, *s_tmax_lbl, *s_kwh_lbl;
 static lv_obj_t *s_res_box, *s_res_lbl;
 static lv_obj_t *s_fan_box, *s_fan_lbl;
@@ -92,6 +96,22 @@ static void update_cb(lv_timer_t *t)
     }
     lv_bar_set_value(s_time_bar, pct, LV_ANIM_OFF);
 
+    // Cuadro H: humedad de cámara EN VIVO (siempre, haya objetivo o no).
+    if (s.humidity_fault) {
+        lv_label_set_text(s_hum_bar_lbl, "H --");
+    } else {
+        snprintf(buf, sizeof(buf), "H %.0f%%", s.humidity);
+        lv_label_set_text(s_hum_bar_lbl, buf);
+    }
+
+    // Cuadro OBJ.: objetivo de humedad de la sesión (auto-stop). "--" si no hay.
+    if (s.humidity_target > 0.0f) {
+        snprintf(buf, sizeof(buf), "OBJ %.0f%%", s.humidity_target);
+        lv_label_set_text(s_hum_obj_lbl, buf);
+    } else {
+        lv_label_set_text(s_hum_obj_lbl, "OBJ --");
+    }
+
     // Estado
     if (s.safety_faults & SAFETY_TRIP_MASK) { ui_show_screen(UI_SCREEN_ALARMA); return; }
     if (s.run_state == RUN_STATE_PAUSED) {
@@ -99,8 +119,8 @@ static void update_cb(lv_timer_t *t)
         lv_obj_set_style_bg_color(s_state_bar, UI_COL_YELLOW, 0);
         lv_obj_set_style_bg_color(s_pausar_btn, UI_COL_GREY_BTN, 0);
     } else if (s.run_state == RUN_STATE_COMPLETED) {
-        lv_label_set_text(s_state_lbl, "COMPLETADO");
-        lv_obj_set_style_bg_color(s_state_bar, UI_COL_GREEN, 0);
+        lv_label_set_text(s_state_lbl, s.cooling_active ? "COMPLETADO - ENFRIANDO" : "COMPLETADO");
+        lv_obj_set_style_bg_color(s_state_bar, s.cooling_active ? UI_COL_CYAN : UI_COL_GREEN, 0);
         lv_obj_set_style_bg_color(s_pausar_btn, UI_COL_GREY_BTN, 0);
     } else if (!s.warmup_done) {
         lv_label_set_text(s_state_lbl, "CALENTANDO");
@@ -161,10 +181,14 @@ void screen_func_manual_build(lv_obj_t *scr)
     ui_left_panel_attach(scr, UI_SCREEN_PROG_MANUAL);
     lv_obj_t *p = ui_make_right_pane(scr);
 
-    // y=0..20: barra de estado
+    // y=0..20: barra de estado (IZQUIERDA) + 2 cuadros de humedad (DERECHA).
+    // Reparto del ancho del panel (360): 240 barra + 2 + 58 H + 2 + 58 OBJ.
+    // La barra ya no ocupa todo el ancho para dejar lugar a los dos cuadros.
+    const int SBAR_W = 240, HBOX_W = 58, HBOX_GAP = 2;
+
     s_state_bar = lv_obj_create(p);
     lv_obj_remove_style_all(s_state_bar);
-    lv_obj_set_size(s_state_bar, LV_HOR_RES - UI_RIGHT_X, 20);
+    lv_obj_set_size(s_state_bar, SBAR_W, 28);
     lv_obj_align(s_state_bar, LV_ALIGN_TOP_LEFT, 0, 0);
     lv_obj_set_style_bg_color(s_state_bar, UI_COL_GREEN, 0);
     lv_obj_set_style_bg_opa(s_state_bar, LV_OPA_COVER, 0);
@@ -174,31 +198,54 @@ void screen_func_manual_build(lv_obj_t *scr)
     lv_obj_center(s_state_lbl);
     lv_label_set_text(s_state_lbl, "MANUAL");
 
+    // Cuadro "H" — humedad de cámara EN VIVO (siempre visible si hay sensor).
+    s_hum_now_box = ui_make_box(p, UI_COL_PANEL_BG, UI_COL_CYAN);
+    lv_obj_set_size(s_hum_now_box, HBOX_W, 28);
+    lv_obj_align(s_hum_now_box, LV_ALIGN_TOP_LEFT, SBAR_W + HBOX_GAP, 0);
+    lv_obj_set_style_pad_all(s_hum_now_box, 0, 0);
+    s_hum_bar_lbl = lv_label_create(s_hum_now_box);
+    lv_obj_set_style_text_font(s_hum_bar_lbl, ui_font_sm_bold(), 0);
+    lv_obj_set_style_text_color(s_hum_bar_lbl, UI_COL_CYAN, 0);
+    lv_obj_center(s_hum_bar_lbl);
+    lv_label_set_text(s_hum_bar_lbl, "H --");
+
+    // Cuadro "OBJ." — humedad objetivo de la sesión (auto-stop). "--" si no hay.
+    s_hum_obj_box = ui_make_box(p, UI_COL_PANEL_BG, UI_COL_LABEL_GREY);
+    lv_obj_set_size(s_hum_obj_box, HBOX_W, 28);
+    lv_obj_align(s_hum_obj_box, LV_ALIGN_TOP_LEFT,
+                 SBAR_W + HBOX_GAP + HBOX_W + HBOX_GAP, 0);
+    lv_obj_set_style_pad_all(s_hum_obj_box, 0, 0);
+    s_hum_obj_lbl = lv_label_create(s_hum_obj_box);
+    lv_obj_set_style_text_font(s_hum_obj_lbl, ui_font_sm_bold(), 0);
+    lv_obj_set_style_text_color(s_hum_obj_lbl, UI_COL_LABEL_GREY, 0);
+    lv_obj_center(s_hum_obj_lbl);
+    lv_label_set_text(s_hum_obj_lbl, "OBJ --");
+
     // y=24..64: row de 4 cajitas SET POINT | T PROGRAMADO | RESISTENCIA | TURBINAS
     const int BW = 86, GAP = 2;
     int x = 4;
-    make_info_box(p, "SET POINT",  x, 24, BW, UI_COL_ORANGE, UI_COL_ORANGE, &s_sp_lbl);    x += BW + GAP;
-    make_info_box(p, "T PROGRAM.", x, 24, BW, UI_COL_TIME_BLUE, UI_COL_TIME_BLUE, &s_tprog_lbl); x += BW + GAP;
-    s_res_box = make_info_box(p, "RESISTENCIA", x, 24, BW, UI_COL_GREEN, UI_COL_WHITE, &s_res_lbl); x += BW + GAP;
-    s_fan_box = make_info_box(p, "TURBINAS",    x, 24, BW, UI_COL_GREEN, UI_COL_WHITE, &s_fan_lbl);
+    make_info_box(p, "SET POINT",  x, 32, BW, UI_COL_ORANGE, UI_COL_ORANGE, &s_sp_lbl);    x += BW + GAP;
+    make_info_box(p, "T PROGRAM.", x, 32, BW, UI_COL_TIME_BLUE, UI_COL_TIME_BLUE, &s_tprog_lbl); x += BW + GAP;
+    s_res_box = make_info_box(p, "RESISTENCIA", x, 32, BW, UI_COL_GREEN, UI_COL_WHITE, &s_res_lbl); x += BW + GAP;
+    s_fan_box = make_info_box(p, "TURBINAS",    x, 32, BW, UI_COL_GREEN, UI_COL_WHITE, &s_fan_lbl);
 
     // y=70..118: TEMPERATURA grande + label SP
     s_big_temp = lv_label_create(p);
     lv_obj_set_style_text_font(s_big_temp, ui_font_huge(), 0);
     lv_obj_set_style_text_color(s_big_temp, UI_COL_TEMP_RED, 0);
-    lv_obj_align(s_big_temp, LV_ALIGN_TOP_LEFT, 14, 68);
+    lv_obj_align(s_big_temp, LV_ALIGN_TOP_LEFT, 14, 76);
     lv_label_set_text(s_big_temp, "--.-");
 
     s_temp_sp_lbl = lv_label_create(p);
     lv_obj_set_style_text_font(s_temp_sp_lbl, ui_font_md(), 0);
     lv_obj_set_style_text_color(s_temp_sp_lbl, UI_COL_LABEL_GREY, 0);
-    lv_obj_align(s_temp_sp_lbl, LV_ALIGN_TOP_RIGHT, -12, 92);
+    lv_obj_align(s_temp_sp_lbl, LV_ALIGN_TOP_RIGHT, -12, 100);
     lv_label_set_text(s_temp_sp_lbl, "/ -- \xC2\xB0""C");
 
     // y=120..132: barra temp
     s_temp_bar = lv_bar_create(p);
     lv_obj_set_size(s_temp_bar, 340, 12);
-    lv_obj_align(s_temp_bar, LV_ALIGN_TOP_LEFT, 8, 120);
+    lv_obj_align(s_temp_bar, LV_ALIGN_TOP_LEFT, 8, 128);
     lv_bar_set_range(s_temp_bar, 0, 100);
     lv_obj_set_style_bg_color(s_temp_bar, UI_COL_GREY_BTN, LV_PART_MAIN);
     lv_obj_set_style_bg_color(s_temp_bar, UI_COL_TEMP_RED, LV_PART_INDICATOR);
@@ -209,19 +256,19 @@ void screen_func_manual_build(lv_obj_t *scr)
     s_big_time = lv_label_create(p);
     lv_obj_set_style_text_font(s_big_time, ui_font_huge(), 0);
     lv_obj_set_style_text_color(s_big_time, UI_COL_TIME_BLUE, 0);
-    lv_obj_align(s_big_time, LV_ALIGN_TOP_LEFT, 14, 136);
+    lv_obj_align(s_big_time, LV_ALIGN_TOP_LEFT, 14, 144);
     lv_label_set_text(s_big_time, "00:00:00");
 
     s_time_total_lbl = lv_label_create(p);
     lv_obj_set_style_text_font(s_time_total_lbl, ui_font_sm(), 0);
     lv_obj_set_style_text_color(s_time_total_lbl, UI_COL_LABEL_GREY, 0);
-    lv_obj_align(s_time_total_lbl, LV_ALIGN_TOP_RIGHT, -12, 162);
+    lv_obj_align(s_time_total_lbl, LV_ALIGN_TOP_RIGHT, -12, 170);
     lv_label_set_text(s_time_total_lbl, "");
 
     // y=190..202: barra tiempo
     s_time_bar = lv_bar_create(p);
     lv_obj_set_size(s_time_bar, 340, 12);
-    lv_obj_align(s_time_bar, LV_ALIGN_TOP_LEFT, 8, 188);
+    lv_obj_align(s_time_bar, LV_ALIGN_TOP_LEFT, 8, 196);
     lv_bar_set_range(s_time_bar, 0, 100);
     lv_obj_set_style_bg_color(s_time_bar, UI_COL_GREY_BTN, LV_PART_MAIN);
     lv_obj_set_style_bg_color(s_time_bar, UI_COL_TIME_BLUE, LV_PART_INDICATOR);
@@ -231,9 +278,9 @@ void screen_func_manual_build(lv_obj_t *scr)
     // y=208..248: row inferior T MIN | T MAX | CONSUMO (3 cajas centradas)
     const int B2_W = 110, B2_GAP = 9;
     int x2 = (LV_HOR_RES - UI_RIGHT_X - (3 * B2_W + 2 * B2_GAP)) / 2;
-    make_info_box(p, "T MIN SESION", x2,                     208, B2_W, UI_COL_CYAN,   UI_COL_CYAN,   &s_tmin_lbl);
-    make_info_box(p, "T MAX SESION", x2 + (B2_W + B2_GAP),   208, B2_W, UI_COL_YELLOW, UI_COL_YELLOW, &s_tmax_lbl);
-    make_info_box(p, "CONSUMO kWh",  x2 + 2*(B2_W + B2_GAP), 208, B2_W, UI_COL_GREEN,  UI_COL_GREEN,  &s_kwh_lbl);
+    make_info_box(p, "T MIN SESION", x2,                     216, B2_W, UI_COL_CYAN,   UI_COL_CYAN,   &s_tmin_lbl);
+    make_info_box(p, "T MAX SESION", x2 + (B2_W + B2_GAP),   216, B2_W, UI_COL_YELLOW, UI_COL_YELLOW, &s_tmax_lbl);
+    make_info_box(p, "CONSUMO kWh",  x2 + 2*(B2_W + B2_GAP), 216, B2_W, UI_COL_GREEN,  UI_COL_GREEN,  &s_kwh_lbl);
 
     // Bottom: 3 botones
     s_pausar_btn = lv_btn_create(p);

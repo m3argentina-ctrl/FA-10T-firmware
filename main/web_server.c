@@ -1,4 +1,5 @@
 #include "web_server.h"
+#include "ota_update.h"
 #include "app_config.h"
 
 #if WEB_SERVER_ENABLED
@@ -12,6 +13,7 @@
 #include "app_state.h"
 #include "telemetry.h"
 #include "wifi_manager.h"
+#include "cloud_telemetry.h"
 
 static const char *TAG = "web_server";
 
@@ -60,18 +62,21 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 
     char modelo[2 * MODEL_NAME_MAX], serie[2 * SERIE_NUM_MAX];
     char prog[2 * PROG_NAME_MAX],    ssid_e[2 * 33];
+    char dev[40];   // dev_id de fábrica (ej "FA10T-0002"), "" si sin provisión
     json_escape(modelo, sizeof(modelo), s.modelo);
     json_escape(serie,  sizeof(serie),  s.serie);
     json_escape(prog,   sizeof(prog),   s.nombre_programa);
     json_escape(ssid_e, sizeof(ssid_e), ssid ? ssid : "");
+    json_escape(dev,    sizeof(dev),    cloud_telemetry_device_id());
 
     char buf[1280];
     int n = snprintf(buf, sizeof(buf),
         "{"
+        "\"dev_id\":\"%s\","
         "\"temp\":%.1f,\"raw_temp\":%.1f,\"fault\":%d,"
         "\"sp_eff\":%.1f,\"sp_cfg\":%.1f,"
         "\"drv\":%.0f,\"fan\":%.0f,\"aux\":%.0f,"
-        "\"hum\":%.1f,\"hum_fault\":%d,"
+        "\"hum\":%.1f,\"hum_tgt\":%.1f,\"hum_fault\":%d,"
         "\"op_mode\":%d,\"run_state\":%d,\"warmup\":%d,\"etapa\":%u,"
         "\"elapsed_s\":%lu,\"total_s\":%lu,\"remaining_s\":%lu,"
         "\"t_min\":%.1f,\"t_max\":%.1f,"
@@ -82,11 +87,12 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         "\"fan_faults\":%lu,\"power_fails\":%lu,\"t_max_hist\":%.1f,"
         "\"ssid\":\"%s\",\"ip\":\"%s\""
         "}",
+        dev,
         s.last_sample.temperature, s.last_sample.raw_temperature,
         s.last_sample.fault ? 1 : 0,
         s.effective_setpoint, s.setpoint,
         s.ssr_drv_duty * 100.0f, s.ssr_fan_duty * 100.0f, s.ssr_aux_duty * 100.0f,
-        s.humidity, s.humidity_fault ? 1 : 0,
+        s.humidity, s.humidity_target, s.humidity_fault ? 1 : 0,
         (int)s.op_mode, (int)s.run_state, s.warmup_done ? 1 : 0,
         (unsigned)s.etapa_activa,
         (unsigned long)s.session_elapsed_s, (unsigned long)s.session_total_s,
@@ -143,8 +149,13 @@ esp_err_t web_server_start(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port      = 80;
     config.lru_purge_enable = true;          // recicla sockets si se llenan
-    config.max_uri_handlers = 8;
-    config.stack_size       = 5120;
+    config.max_uri_handlers = 8;   // 3 propios + 2 de OTA
+    // Subir un firmware de ~1,8 MB es mucho mas exigente que servir el
+    // dashboard: mas stack (esp_ota_write escribe flash) y timeouts holgados
+    // para que una red lenta no corte la transferencia a mitad de camino.
+    config.stack_size        = 8192;
+    config.recv_wait_timeout = 20;
+    config.send_wait_timeout = 20;
 
     esp_err_t err = httpd_start(&s_server, &config);
     if (err != ESP_OK) {
@@ -162,6 +173,10 @@ esp_err_t web_server_start(void)
     httpd_register_uri_handler(s_server, &root);
     httpd_register_uri_handler(s_server, &status);
     httpd_register_uri_handler(s_server, &events);
+
+    // Endpoints de actualizacion de firmware por WiFi (GET/POST /update). Es la
+    // via para actualizar un equipo en casa del cliente SIN cable USB.
+    ota_update_register(s_server);
 
     ESP_LOGI(TAG, "servidor web HTTP escuchando en :80 (dashboard de monitoreo)");
     return ESP_OK;

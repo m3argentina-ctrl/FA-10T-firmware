@@ -3,7 +3,7 @@
 // Boot sequence:
 //   1. NVS init + load config
 //   2. SSR 3-channel driver (all OFF)
-//   3. PT1000 ADC + calibration
+//   3. Temperatura DS18B20 (1-Wire) + calibración
 //   4. ACS712 current sensor
 //   5. SHT31 humidity (also brings up the shared I2C bus)
 //   6. Safety subsystem (TWDT + runaway + fan fault)
@@ -23,7 +23,7 @@
 #include "app_config.h"
 #include "app_state.h"
 #include "nvs_config.h"
-#include "pt1000_adc.h"
+#include "ds18b20_bus.h"
 #include "acs712.h"
 #include "sht31.h"
 #include "ssr3ch.h"
@@ -34,6 +34,7 @@
 #include "wifi_manager.h"
 #include "web_server.h"
 #include "cloud_telemetry.h"
+#include "ota_update.h"
 
 #include "tasks/sensor_task.h"
 #include "tasks/control_task.h"
@@ -60,7 +61,7 @@ static void log_chip(void)
 }
 
 // --- Helpers referenced by simulation-mode drivers --------------------------
-// pt1000_adc.c & acs712.c declare these as extern. Kept here so the sim path
+// ds18b20_bus.c & acs712.c declare these as extern. Kept here so the sim path
 // does not need to include app_state.h directly.
 float app_setpoint_for_sim(void)
 {
@@ -83,7 +84,7 @@ bool app_fan_is_on_for_sim(void)
     return on;
 }
 
-// Duty actual del SSR_DRV (0..1). El sim del PT1000 lo usa para decidir si
+// Duty actual del SSR_DRV (0..1). El sim de temperatura lo usa para decidir si
 // la T debe subir (heater ON) o bajar hacia ambiente (heater OFF). Sin esto,
 // la T sube siempre y se dispara SAFETY_RUNAWAY cuando el PID corta duty.
 float app_drv_duty_for_sim(void)
@@ -120,6 +121,22 @@ void app_main(void)
     if (cfg_err == ESP_ERR_NVS_NOT_FOUND) {
         ESP_LOGW(TAG, "running with factory defaults (no saved config)");
     }
+
+    // MIGRACIÓN v3: el PT1000 usaba calibración por 2 puntos y podía quedar con
+    // ganancias lejos de 1 (ej. 1.20). El DS18B20 es DIGITAL y viene calibrado
+    // de fábrica, así que esa recta vieja infla la lectura y puede disparar
+    // alarmas falsas — un DS18B20 recién energizado devuelve 85,0 °C (valor por
+    // defecto de su scratchpad), que con gain 1.2 se convierte en 102 °C y
+    // latchea OVERTEMP. Se acepta sólo un trim chico; fuera de rango se resetea.
+    if (cfg.cal_gain < 0.95f || cfg.cal_gain > 1.05f) {
+        ESP_LOGW(TAG, "calibracion fuera de rango (gain=%.4f offset=%.2f) — "
+                      "reseteando a 1.0/0.0 (DS18B20 no la necesita)",
+                 (double)cfg.cal_gain, (double)cfg.cal_offset);
+        cfg.cal_gain   = 1.0f;
+        cfg.cal_offset = 0.0f;
+        nvs_config_save(&cfg);
+    }
+
     app_state_set_config(&cfg);
 
     telemetry_init();
@@ -132,8 +149,14 @@ void app_main(void)
     ssr3ch_set_duty(SSR_CH_FAN, 0.0f);
     ssr3ch_set_duty(SSR_CH_AUX, 0.0f);
 
-    // 3. PT1000 ADC
-    ESP_ERROR_CHECK(pt1000_adc_init());
+    // 3. Temperatura — DS18B20 bus 1-Wire (placa v3; reemplaza al PT1000 ADC).
+    // No abortamos el boot si falla: la safety marcará SENSOR_FAULT y el equipo
+    // queda en un estado seguro (SSRs OFF) hasta que el operador lo resuelva.
+    esp_err_t temp_err = ds18b20_bus_init();
+    if (temp_err != ESP_OK) {
+        ESP_LOGW(TAG, "DS18B20 bus init failed (%s) — safety marcará sensor_fault",
+                 esp_err_to_name(temp_err));
+    }
 
     // 4. ACS712 current sensor
     ESP_ERROR_CHECK(acs712_init());
@@ -214,6 +237,14 @@ void app_main(void)
         ESP_LOGW(TAG, "cloud_telemetry_start falló (%s) — sin telemetría remota",
                  esp_err_to_name(cerr));
     }
+
+    // 12. AUTODIAGNÓSTICO SUPERADO → confirmar la imagen. Si este arranque viene
+    //     de una actualización OTA, hasta acá la imagen estaba "a prueba"
+    //     (PENDING_VERIFY): recién ahora se la marca válida y se cancela el
+    //     rollback. Si el firmware se hubiera colgado antes de este punto, el
+    //     bootloader volvería SOLO a la versión anterior en el próximo reset.
+    //     Por eso va al FINAL del boot, después de sensores, safety y tasks.
+    ota_update_mark_valid();
 
     ESP_LOGI(TAG, "boot complete; setpoint=%.1f°C envelope=%.0f..%.0f°C",
              cfg.setpoint, OPERATING_TEMP_MIN_C, OPERATING_TEMP_MAX_C);

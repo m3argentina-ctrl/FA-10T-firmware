@@ -16,6 +16,7 @@ typedef struct {
     char     nombre[PROG_NAME_MAX];
     float    etapa_sp[PROG_STAGE_COUNT];
     uint32_t etapa_duration_s[PROG_STAGE_COUNT];
+    float    humedad_objetivo;   // %RH objetivo para auto-stop; 0 = OFF (corre por tiempo)
 } programa_t;
 
 esp_err_t programa_init(void);
