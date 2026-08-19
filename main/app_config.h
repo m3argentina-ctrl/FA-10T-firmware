@@ -291,7 +291,8 @@
 // las salidas RESIST/FAN/AUX sin calefactor (sensor en agua caliente sube la T
 // con el SSR en OFF y dispararía un runaway falso). ¡PONER EN 0 antes de
 // conectar el calefactor real! Con 1 NO hay protección contra SSR pegado.
-#define SAFETY_BENCH_TEST            1
+// 0 = OPERACIÓN REAL: detector de runaway ACTIVO (protección contra SSR pegado).
+#define SAFETY_BENCH_TEST            0
 // Runaway: with SSR OFF, T must NOT rise faster than RUNAWAY_DT_C in WINDOW_S.
 // (Detects shorted SSR, stuck heater, etc.)
 #define SAFETY_RUNAWAY_DT_C          5.0f
