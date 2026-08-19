@@ -77,7 +77,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         "\"sp_eff\":%.1f,\"sp_cfg\":%.1f,"
         "\"drv\":%.0f,\"fan\":%.0f,\"aux\":%.0f,"
         "\"hum\":%.1f,\"hum_tgt\":%.1f,\"hum_fault\":%d,"
-        "\"op_mode\":%d,\"run_state\":%d,\"warmup\":%d,\"etapa\":%u,"
+        "\"op_mode\":%d,\"run_state\":%d,\"warmup\":%d,\"cooling\":%d,\"etapa\":%u,"
         "\"elapsed_s\":%lu,\"total_s\":%lu,\"remaining_s\":%lu,"
         "\"t_min\":%.1f,\"t_max\":%.1f,"
         "\"prog\":\"%s\",\"modelo\":\"%s\",\"serie\":\"%s\","
@@ -94,6 +94,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         s.ssr_drv_duty * 100.0f, s.ssr_fan_duty * 100.0f, s.ssr_aux_duty * 100.0f,
         s.humidity, s.humidity_target, s.humidity_fault ? 1 : 0,
         (int)s.op_mode, (int)s.run_state, s.warmup_done ? 1 : 0,
+        s.cooling_active ? 1 : 0,
         (unsigned)s.etapa_activa,
         (unsigned long)s.session_elapsed_s, (unsigned long)s.session_total_s,
         (unsigned long)s.session_remaining_s,

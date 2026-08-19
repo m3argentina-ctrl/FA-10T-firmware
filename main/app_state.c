@@ -4,6 +4,7 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "nvs.h"
+#include "nvs_flash.h"
 
 static const char *TAG = "app_state";
 #define IDENT_NS "fa10t_id"
@@ -121,6 +122,33 @@ esp_err_t app_state_save_num_modulos(uint8_t n)
     if (err == ESP_OK) ESP_LOGI(TAG, "num_modulos saved: %u", (unsigned)n);
     else               ESP_LOGE(TAG, "save num_modulos failed: %s", esp_err_to_name(err));
     return err;
+}
+
+void app_state_factory_reset(void)
+{
+    // Preservar identidad de equipo (se re-escribe tras borrar). El dev_id/token
+    // de nube viven en OTRA partición ("factory") y NO se tocan acá.
+    char modelo[MODEL_NAME_MAX], serie[SERIE_NUM_MAX];
+    uint8_t num_mod;
+    app_state_lock();
+    snprintf(modelo, sizeof(modelo), "%s", s_state.modelo);
+    snprintf(serie,  sizeof(serie),  "%s", s_state.serie);
+    num_mod = s_state.num_modulos;
+    app_state_unlock();
+
+    ESP_LOGW(TAG, "RESET TOTAL: borrando NVS por defecto (identidad y nube se conservan)…");
+    esp_err_t err = nvs_flash_erase();          // sólo la partición "nvs"; "factory" intacta
+    if (err != ESP_OK) ESP_LOGE(TAG, "nvs_flash_erase: %s", esp_err_to_name(err));
+    err = nvs_flash_init();
+    if (err != ESP_OK) ESP_LOGE(TAG, "nvs_flash_init: %s", esp_err_to_name(err));
+
+    // Re-escribir la identidad preservada en la NVS recién borrada.
+    app_state_save_modelo(modelo);
+    app_state_save_serie(serie);
+    app_state_save_num_modulos(num_mod);
+
+    ESP_LOGW(TAG, "RESET TOTAL completo (modelo='%s' serie='%s'). Reiniciando…", modelo, serie);
+    esp_restart();                               // no retorna
 }
 
 QueueHandle_t app_state_sensor_queue(void) { return s_sensor_q; }

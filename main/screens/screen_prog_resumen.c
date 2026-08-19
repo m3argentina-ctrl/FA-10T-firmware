@@ -10,12 +10,22 @@
 
 #include "esp_log.h"
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
 
 static const char *TAG = "ui_resumen";
 
 static lv_obj_t *s_name_ta;        // textarea visible en la pantalla
 static lv_obj_t *s_hum_val_lbl;    // valor del objetivo de humedad de la receta
+
+// Auto-repeat de los botones +/- de humedad: al mantener apretado repite el
+// paso (mismo criterio que los spinners de MODO MANUAL). Antes usaban solo
+// LV_EVENT_CLICKED → no repetían al mantener y muchas veces ni respondían bien.
+#define HOLD_DELAY_MS   450
+#define HOLD_REPEAT_MS  90
+
+static lv_timer_t *s_hold_timer;
+static int8_t      s_hold_dir;
 
 // --- Humedad objetivo de la receta (auto-stop). OFF = corre por tiempo. ---
 static void refresh_hum_val(void)
@@ -45,8 +55,25 @@ static void hum_step(int dir)
     refresh_hum_val();
 }
 
-static void hum_minus_cb(lv_event_t *e) { (void)e; hum_step(-1); }
-static void hum_plus_cb(lv_event_t *e)  { (void)e; hum_step(+1); }
+static void hold_timer_cb(lv_timer_t *t)
+{
+    hum_step(s_hold_dir);
+    lv_timer_set_period(t, HOLD_REPEAT_MS);   // tras la 1ª repetición, ritmo rápido
+}
+
+static void hum_press_cb(lv_event_t *e)
+{
+    intptr_t code = (intptr_t)lv_event_get_user_data(e);
+    s_hold_dir = (code & 0x01) ? +1 : -1;
+    hum_step(s_hold_dir);                       // primer paso inmediato (toque corto)
+    if (!s_hold_timer) s_hold_timer = lv_timer_create(hold_timer_cb, HOLD_DELAY_MS, NULL);
+}
+
+static void hum_release_cb(lv_event_t *e)
+{
+    (void)e;
+    if (s_hold_timer) { lv_timer_del(s_hold_timer); s_hold_timer = NULL; }
+}
 
 // --- Sincronización entre textarea visible y buffer del wizard ---
 static void sync_name_to_recipe(void)
@@ -126,6 +153,10 @@ static void make_summary_row(lv_obj_t *parent, uint8_t i, int y,
 
 void screen_prog_resumen_build(lv_obj_t *scr)
 {
+    // Si se salió con el dedo apoyado en +/-, el timer de auto-repeat podría
+    // quedar vivo apuntando a labels ya destruidos: matarlo al reconstruir.
+    if (s_hold_timer) { lv_timer_del(s_hold_timer); s_hold_timer = NULL; }
+
     ui_left_panel_attach(scr, UI_SCREEN_PROG_PROGRAMAS);
     lv_obj_t *p = ui_make_right_pane(scr);
 
@@ -195,7 +226,9 @@ void screen_prog_resumen_build(lv_obj_t *scr)
     lv_obj_set_size(hm, 46, 34);
     lv_obj_align(hm, LV_ALIGN_TOP_LEFT, 118, 202);
     lv_obj_set_style_bg_color(hm, UI_COL_CYAN, 0);
-    lv_obj_add_event_cb(hm, hum_minus_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(hm, hum_press_cb,   LV_EVENT_PRESSED,    (void *)0);
+    lv_obj_add_event_cb(hm, hum_release_cb, LV_EVENT_RELEASED,   NULL);
+    lv_obj_add_event_cb(hm, hum_release_cb, LV_EVENT_PRESS_LOST, NULL);
     lv_obj_t *hml = lv_label_create(hm);
     lv_label_set_text(hml, "-");
     lv_obj_set_style_text_font(hml, ui_font_xl(), 0);
@@ -211,7 +244,9 @@ void screen_prog_resumen_build(lv_obj_t *scr)
     lv_obj_set_size(hp, 46, 34);
     lv_obj_align(hp, LV_ALIGN_TOP_LEFT, 248, 202);
     lv_obj_set_style_bg_color(hp, UI_COL_CYAN, 0);
-    lv_obj_add_event_cb(hp, hum_plus_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(hp, hum_press_cb,   LV_EVENT_PRESSED,    (void *)1);
+    lv_obj_add_event_cb(hp, hum_release_cb, LV_EVENT_RELEASED,   NULL);
+    lv_obj_add_event_cb(hp, hum_release_cb, LV_EVENT_PRESS_LOST, NULL);
     lv_obj_t *hpl = lv_label_create(hp);
     lv_label_set_text(hpl, "+");
     lv_obj_set_style_text_font(hpl, ui_font_xl(), 0);

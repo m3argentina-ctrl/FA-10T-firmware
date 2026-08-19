@@ -37,6 +37,7 @@
   .badge.pause{background:#332b10;color:#ffd98a}
   .badge.alarm{background:#3a1512;color:#ff8a80;border:1px solid #d3392f88;animation:pulse 1s infinite}
   .badge.idle{background:#222a34;color:var(--muted)}
+  .badge.cool{background:#0e2a30;color:#5bd6e0;border:1px solid #22a5b566}
   @keyframes pulse{50%{opacity:.45}}
   .prog{margin-top:14px}
   .prog .bar{height:14px;background:#0c0f14;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
@@ -152,6 +153,7 @@ async function tick(){
 
     let est=RUN[d.run_state]||'—', cls=RUNCLS[d.run_state]||'idle';
     if(d.run_state===2 && d.warmup===0){est='Calentando';cls='warm';}
+    if(d.run_state===4 && d.cooling===1){est='Completado — Enfriando';cls='cool';}
     const b=$('estado'); b.textContent=est; b.className='badge '+cls;
 
     const pct=d.total_s>0?Math.min(100,100*d.elapsed_s/d.total_s):0;

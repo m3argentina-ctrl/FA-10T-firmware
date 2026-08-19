@@ -14,6 +14,26 @@ static float s_below_s;       // humedad <= objetivo sostenida (s)
 static float s_fault_s;       // falla de sensor sostenida (s)
 static bool  s_fault_noted;   // ya avisamos la falla de este episodio
 
+// Completa la sesión activa: COMPLETADO + arranca el enfriamiento post-proceso.
+// Revalida bajo lock (el estado pudo cambiar entre la lectura y este commit).
+// Devuelve true si se aplicó.
+static bool complete_session(void)
+{
+    app_state_lock();
+    app_state_t *s = app_state_get();
+    bool ok = (s->op_mode != OP_MODE_IDLE) && (s->run_state == RUN_STATE_RUNNING);
+    if (ok) {
+        s->run_state           = RUN_STATE_COMPLETED;
+        s->session_remaining_s = 0;
+        s->effective_setpoint  = 0.0f;
+        // Enfriamiento post-proceso: el fan sigue; lo gobierna cooldown_tick().
+        s->fan_command_on      = true;
+        s->cooling_active      = true;
+    }
+    app_state_unlock();
+    return ok;
+}
+
 void humidity_autostop_tick(float dt_s)
 {
     // 1. Leer el estado bajo lock y soltar antes de decidir / avisar.
@@ -25,6 +45,7 @@ void humidity_autostop_tick(float dt_s)
     float    hum     = st->humidity;
     bool     hum_flt = st->humidity_fault;
     uint32_t elapsed = st->session_elapsed_s;
+    uint32_t total   = st->session_total_s;
     app_state_unlock();
 
     // 2. Sin sesión corriendo o sin objetivo => modo por tiempo: no-op + reset.
@@ -35,15 +56,24 @@ void humidity_autostop_tick(float dt_s)
         return;
     }
 
-    // 3. Sensor en falla: NO decidir con datos malos. Avisar una vez si persiste;
-    //    el proceso sigue y lo cierra el tope de tiempo de la sesión.
+    // 3. Sensor en falla: NO decidir con datos malos. Si la falla persiste y ya
+    //    pasó el tiempo programado, completar por tiempo (respaldo) para no
+    //    correr hasta el tope de 24 h con un sensor muerto.
     if (hum_flt) {
         s_below_s = 0.0f;
         s_fault_s += dt_s;
         if (!s_fault_noted && s_fault_s >= (float)HUM_AUTOSTOP_FAULT_TO_S) {
             s_fault_noted = true;
-            ESP_LOGW(TAG, "sensor de humedad sin lectura — sigue hasta el tope de tiempo");
+            ESP_LOGW(TAG, "sensor de humedad sin lectura — respaldo por tiempo programado");
             telemetry_log_event(TELEM_EVT_FAULT, "sensor humedad sin lectura");
+        }
+        if (s_fault_s >= (float)HUM_AUTOSTOP_FAULT_TO_S && elapsed >= total) {
+            if (complete_session()) {
+                ESP_LOGW(TAG, "sensor humedad en falla — COMPLETADO por tiempo (respaldo)");
+                audio_alarm_done();
+                telemetry_log_event(TELEM_EVT_SESSION_END, "fin por tiempo (sensor hum. en falla)");
+                telemetry_note_session_end(true);
+            }
         }
         return;
     }
@@ -65,22 +95,7 @@ void humidity_autostop_tick(float dt_s)
     if (s_below_s < (float)HUM_AUTOSTOP_SUSTAIN_S) return;
 
     s_below_s = 0.0f;
-    app_state_lock();
-    app_state_t *s = app_state_get();
-    // Revalidar: pudo cambiar el estado entre la lectura y este commit.
-    bool ok = (s->op_mode != OP_MODE_IDLE) && (s->run_state == RUN_STATE_RUNNING);
-    if (ok) {
-        s->run_state           = RUN_STATE_COMPLETED;
-        s->session_remaining_s = 0;
-        s->effective_setpoint  = 0.0f;
-        // Enfriamiento post-proceso: fan sigue hasta que T caiga al objetivo
-        // (o tope); lo gobierna cooldown_tick().
-        s->fan_command_on      = true;
-        s->cooling_active      = true;
-    }
-    app_state_unlock();
-
-    if (ok) {
+    if (complete_session()) {
         ESP_LOGI(TAG, "humedad %.0f%% <= objetivo %.0f%% sostenida — COMPLETADO", hum, target);
         audio_alarm_done();
         telemetry_log_event(TELEM_EVT_SESSION_END, "humedad obj. %.0f%% alcanzada", hum);

@@ -136,6 +136,12 @@ esp_err_t         app_state_save_serie(const char *serie);
 esp_err_t         app_state_save_pin(const char *pin);
 esp_err_t         app_state_save_num_modulos(uint8_t n);   // clamp 1..MODULOS_MAX
 
+// RESET TOTAL (reset de fábrica): borra TODA la NVS por defecto — telemetría,
+// config (PID/calibración), recetas, PIN (→ default) y WiFi — PRESERVANDO la
+// identidad del equipo (modelo/serie/módulos) y SIN tocar la partición "factory"
+// (dev_id/token de nube). Reinicia el equipo (no retorna).
+void              app_state_factory_reset(void);
+
 #ifdef __cplusplus
 }
 #endif

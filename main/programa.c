@@ -290,17 +290,27 @@ void programa_tick(float dt_s)
         if (st->session_elapsed_s < acc) { new_stage = i; break; }
     }
 
-    if (st->session_elapsed_s >= st->session_total_s) {
+    // Sin humedad objetivo: completa al terminar la receta. Con humedad objetivo
+    // (>0): la receta corre sus etapas por tiempo, pero al llegar al final NO
+    // completa: mantiene la última etapa hasta que la humedad baje al objetivo
+    // (lo corta humidity_autostop). Tope absoluto de seguridad igual.
+    bool     hum_mode = (st->humidity_target > 0.0f);
+    uint32_t limit    = hum_mode ? (uint32_t)HUM_MODE_MAX_RUN_S : st->session_total_s;
+    if (st->session_elapsed_s >= limit) {
         st->run_state           = RUN_STATE_COMPLETED;
-        st->session_elapsed_s   = st->session_total_s;
+        st->session_elapsed_s   = limit;
         st->session_remaining_s = 0;
         st->effective_setpoint  = 0.0f;
-        // Enfriamiento post-proceso: fan sigue hasta que T caiga al objetivo
-        // (o tope); lo gobierna cooldown_tick().
+        // Enfriamiento post-proceso: fan sigue; lo gobierna cooldown_tick().
         st->fan_command_on      = true;
         st->cooling_active      = true;
         completed_now           = true;
+        if (hum_mode)
+            ESP_LOGW(TAG, "modo humedad: TOPE de seguridad — COMPLETADO por tiempo");
     } else {
+        // Avanzar/mantener etapa. Con humedad objetivo, tras pasar el tiempo de
+        // la receta new_stage queda en la última etapa (el for no rompe) →
+        // mantiene el último setpoint mientras esperamos que baje la humedad.
         if (new_stage != st->etapa_activa) {
             ESP_LOGI(TAG, "stage transition %u → %u, SP %.1f → %.1f",
                      st->etapa_activa, new_stage,
@@ -308,7 +318,10 @@ void programa_tick(float dt_s)
             st->etapa_activa = new_stage;
         }
         st->effective_setpoint  = st->etapa_sp[new_stage];
-        st->session_remaining_s = st->session_total_s - st->session_elapsed_s;
+        if (hum_mode && st->session_elapsed_s >= st->session_total_s)
+            st->session_remaining_s = 0;
+        else
+            st->session_remaining_s = st->session_total_s - st->session_elapsed_s;
     }
     app_state_unlock();
 

@@ -140,16 +140,29 @@ void modo_manual_tick(float dt_s)
                 st->session_elapsed_s += whole;
                 s_elapsed_frac        -= (float)whole;
             }
-            if (st->session_elapsed_s >= st->session_total_s) {
-                st->session_elapsed_s   = st->session_total_s;
+            // Sin humedad objetivo: completa al terminar el tiempo. Con humedad
+            // objetivo (>0): el tiempo es sólo una guía; el corte lo da
+            // humidity_autostop al alcanzar la humedad. Igual hay un TOPE de
+            // seguridad (HUM_MODE_MAX_RUN_S) para no correr indefinidamente.
+            bool     hum_mode = (st->humidity_target > 0.0f);
+            uint32_t limit    = hum_mode ? (uint32_t)HUM_MODE_MAX_RUN_S
+                                         : st->session_total_s;
+            if (st->session_elapsed_s >= limit) {
+                st->session_elapsed_s   = limit;
                 st->session_remaining_s = 0;
                 st->run_state           = RUN_STATE_COMPLETED;
                 st->effective_setpoint  = 0.0f;
-                // Enfriamiento post-proceso: el fan sigue ventilando hasta que
-                // T caiga al objetivo (o tope); lo gobierna cooldown_tick().
+                // Enfriamiento post-proceso: el fan sigue ventilando; lo
+                // gobierna cooldown_tick().
                 st->fan_command_on      = true;
                 st->cooling_active      = true;
                 completed_now           = true;
+                if (hum_mode)
+                    ESP_LOGW(TAG, "modo humedad: TOPE de seguridad — COMPLETADO por tiempo");
+            } else if (hum_mode && st->session_elapsed_s >= st->session_total_s) {
+                // Pasó el tiempo guía: seguimos calentando/ventilando esperando
+                // que la humedad baje al objetivo.
+                st->session_remaining_s = 0;
             } else {
                 st->session_remaining_s = st->session_total_s - st->session_elapsed_s;
             }

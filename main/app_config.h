@@ -251,22 +251,30 @@
 
 // --- Auto-stop por humedad (modo automático) --------------------------------
 // Si la sesión (manual o receta) tiene un "humedad objetivo" (>0), el proceso
-// se completa solo cuando la humedad de cámara baja a ese valor de forma
-// SOSTENIDA, después de un tiempo mínimo. El tiempo configurado de la sesión
-// queda como TOPE máximo de seguridad (lo que ocurra primero). Estos son los
-// parámetros de robustez (acá, no en NVS, para no invalidar la config guardada):
-#define HUM_AUTOSTOP_SUSTAIN_S       180    // humedad <= objetivo sostenida N s antes de cortar
-#define HUM_AUTOSTOP_MIN_RUN_S       900    // no auto-parar antes de N s (post-calentamiento)
-#define HUM_AUTOSTOP_FAULT_TO_S      30     // falla del sensor de humedad sostenida -> avisar
-#define HUM_TARGET_MIN_PCT           3.0f   // objetivo mínimo editable en la UI
-#define HUM_TARGET_MAX_PCT           40.0f  // objetivo máximo editable en la UI
+// corre HASTA alcanzar esa humedad de forma SOSTENIDA (después de un tiempo
+// mínimo), SIN depender del tiempo programado: ese tiempo pasa a ser sólo una
+// guía. Si el objetivo es 0, la sesión se completa por tiempo (clásico).
+// Salvaguardas para no correr indefinidamente:
+//   - HUM_MODE_MAX_RUN_S: tope absoluto de seguridad (la humedad nunca baja).
+//   - si el sensor de humedad queda en falla sostenida Y ya pasó el tiempo
+//     programado, se completa por tiempo (respaldo).
+// Parámetros acá (no en NVS, para no invalidar la config guardada):
+#define HUM_AUTOSTOP_SUSTAIN_S       180      // humedad <= objetivo sostenida N s antes de cortar
+#define HUM_AUTOSTOP_MIN_RUN_S       900      // no auto-parar antes de N s (post-calentamiento)
+#define HUM_AUTOSTOP_FAULT_TO_S      30       // falla del sensor de humedad sostenida -> respaldo/aviso
+#define HUM_MODE_MAX_RUN_S           86400    // tope absoluto de seguridad en modo humedad (24 h)
+#define HUM_TARGET_MIN_PCT           3.0f     // objetivo mínimo editable en la UI
+#define HUM_TARGET_MAX_PCT           40.0f    // objetivo máximo editable en la UI
 
 // --- Enfriamiento post-proceso (cool-down) ----------------------------------
 // Al COMPLETAR una sesión (por tiempo o por humedad), el calefactor se apaga
-// pero las turbinas siguen ventilando un tiempo FIJO para enfriar el producto
-// y la cámara. Solo por tiempo (sin criterio de temperatura: baja todo lo que
-// el ambiente permita en ese lapso).
-#define COOLDOWN_DURATION_S          900     // 15 min de ventilación post-proceso
+// pero las turbinas siguen ventilando para enfriar el producto y la cámara.
+// Corta cuando la temperatura baja al objetivo (COOLDOWN_TEMP_C) O al cumplirse
+// el tope de tiempo (lo que ocurra primero). El tope es una SALVAGUARDA: si el
+// ambiente está caluroso y nunca se llega a esa temperatura, evita que la
+// turbina quede ventilando indefinidamente.
+#define COOLDOWN_TEMP_C              30.0f    // corta el enfriamiento al bajar a esta T
+#define COOLDOWN_DURATION_S          1800     // tope de seguridad: 30 min máx de ventilación
 
 // --- Safety / runaway -------------------------------------------------------
 // Hard absolute emergency: any T above this latches OVERTEMP and cuts all SSRs.

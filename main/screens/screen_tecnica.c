@@ -5,6 +5,7 @@
 #include "telemetry.h"
 #include "nvs_config.h"
 #include "display.h"
+#include "ssr3ch.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,7 +22,8 @@ static const char *TAG = "ui_tecnica";
 static bool       s_authenticated;
 static lv_obj_t  *s_pin_modal;
 static lv_obj_t  *s_pin_ta;
-static lv_obj_t  *s_confirm_modal;
+static lv_obj_t  *s_confirm_modal;   // confirmación RESET SVC
+static lv_obj_t  *s_reset_modal;     // confirmación RESET TOTAL (reset de fábrica)
 
 static lv_obj_t  *s_owner_scr;
 static lv_obj_t  *s_box_hrs, *s_box_cyc, *s_box_svc, *s_box_fan;
@@ -238,12 +240,6 @@ static void on_screen_load_cb(lv_event_t *e)
 }
 
 // --- Action buttons ---------------------------------------------------------
-static void autotune_cb(lv_event_t *e)
-{
-    (void)e;
-    ESP_LOGW("autotune", "TODO: Ziegler-Nichols relay-feedback autotune");
-    telemetry_log_event(TELEM_EVT_SERVICE, "autotune requested (stub)");
-}
 
 // El botón CALIBRAR se quitó de esta pantalla (v3): la temperatura la dan
 // sondas DS18B20 digitales, calibradas de fábrica, así que el asistente de
@@ -327,6 +323,89 @@ static void build_confirm_modal(lv_obj_t *parent)
     lv_obj_set_style_text_font(yl, ui_font_sm(), 0);
     lv_obj_set_style_text_color(yl, UI_COL_WHITE, 0);
     lv_obj_center(yl);
+}
+
+// --- RESET TOTAL (reset de fábrica) -----------------------------------------
+// Deja el equipo "de 0" para instalarlo en un cliente: borra contadores, config,
+// PID/calibración, recetas, PIN (→ default) y WiFi, CONSERVANDO la identidad
+// (modelo/serie/módulos) y la provisión de nube (dev_id/token, partición aparte).
+// El equipo se reinicia. Pide confirmación por lo destructivo.
+static void reset_total_cb(lv_event_t *e)
+{
+    (void)e;
+    if (s_reset_modal) lv_obj_clear_flag(s_reset_modal, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void reset_total_yes_cb(lv_event_t *e)
+{
+    (void)e;
+    ESP_LOGW(TAG, "RESET TOTAL confirmado desde AREA TECNICA");
+    ssr3ch_force_all_off();          // salidas a estado seguro antes de reiniciar
+    app_state_factory_reset();       // borra NVS, conserva identidad y reinicia (no retorna)
+}
+
+static void reset_total_no_cb(lv_event_t *e)
+{
+    (void)e;
+    lv_obj_add_flag(s_reset_modal, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void build_reset_modal(lv_obj_t *parent)
+{
+    s_reset_modal = lv_obj_create(parent);
+    lv_obj_remove_style_all(s_reset_modal);
+    lv_obj_set_size(s_reset_modal, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_style_bg_color(s_reset_modal, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(s_reset_modal, LV_OPA_70, 0);
+    lv_obj_align(s_reset_modal, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_clear_flag(s_reset_modal, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_reset_modal, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t *card = lv_obj_create(s_reset_modal);
+    lv_obj_set_size(card, 320, 176);
+    lv_obj_align(card, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_bg_color(card, UI_COL_PANEL_BG, 0);
+    lv_obj_set_style_border_color(card, UI_COL_RED, 0);
+    lv_obj_set_style_border_width(card, 2, 0);
+    lv_obj_set_style_pad_all(card, 12, 0);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *t = lv_label_create(card);
+    lv_label_set_text(t, LV_SYMBOL_WARNING " RESET TOTAL");
+    lv_obj_set_style_text_font(t, ui_font_lg(), 0);
+    lv_obj_set_style_text_color(t, UI_COL_RED, 0);
+    lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 0);
+
+    lv_obj_t *msg = lv_label_create(card);
+    lv_label_set_text(msg, "Borra contadores, config, recetas,\n"
+                           "PIN y WiFi. Conserva modelo/serie.\n"
+                           "El equipo se REINICIA de cero.");
+    lv_obj_set_style_text_font(msg, ui_font_sm(), 0);
+    lv_obj_set_style_text_color(msg, UI_COL_WHITE, 0);
+    lv_obj_set_style_text_align(msg, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(msg, LV_ALIGN_TOP_MID, 0, 30);
+
+    lv_obj_t *no = lv_btn_create(card);
+    lv_obj_set_size(no, 132, 40);
+    lv_obj_align(no, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_set_style_bg_color(no, UI_COL_GREY_BTN, 0);
+    lv_obj_add_event_cb(no, reset_total_no_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *nl = lv_label_create(no);
+    lv_label_set_text(nl, "CANCELAR");
+    lv_obj_set_style_text_font(nl, ui_font_sm(), 0);
+    lv_obj_set_style_text_color(nl, UI_COL_WHITE, 0);
+    lv_obj_center(nl);
+
+    lv_obj_t *yes = lv_btn_create(card);
+    lv_obj_set_size(yes, 132, 40);
+    lv_obj_align(yes, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    lv_obj_set_style_bg_color(yes, lv_color_hex(0x8B0000), 0);
+    lv_obj_add_event_cb(yes, reset_total_yes_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *yl2 = lv_label_create(yes);
+    lv_label_set_text(yl2, "SI, RESET TOTAL");
+    lv_obj_set_style_text_font(yl2, ui_font_sm(), 0);
+    lv_obj_set_style_text_color(yl2, UI_COL_WHITE, 0);
+    lv_obj_center(yl2);
 }
 
 // --- Cambiar PIN: dos teclados secuenciales (nuevo + confirmar) ---
@@ -612,8 +691,8 @@ void screen_tecnica_build(lv_obj_t *scr)
     // Al ser más anchos entran con font sm (12 px) en vez de xs (10), más legible.
     static const struct { const char *txt; uint32_t col_hex; lv_event_cb_t cb; } acts[] = {
         { "SALIR",       0xD32F2F, salir_cb          },
-        { "AUTOTUNE",    0x2196F3, autotune_cb       },
         { "RESET SVC",   0x2E9E3B, reset_service_cb  },
+        { "RESET TOTAL", 0x8B0000, reset_total_cb    },
         { "CAMBIAR PIN", 0x6A1B9A, cambiar_pin_cb    },
     };
     const int N = sizeof(acts) / sizeof(acts[0]);
@@ -633,6 +712,7 @@ void screen_tecnica_build(lv_obj_t *scr)
 
     build_pin_modal(scr);
     build_confirm_modal(scr);   // overlay de confirmación del RESET SVC
+    build_reset_modal(scr);     // overlay de confirmación del RESET TOTAL (encima de todo)
     lv_obj_add_event_cb(scr, on_screen_load_cb, LV_EVENT_SCREEN_LOAD_START, NULL);
     lv_timer_create(update_cb, 1000, NULL);
 }
