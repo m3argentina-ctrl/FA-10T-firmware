@@ -38,3 +38,20 @@ venv/
 main/device_identity.h
 tools/provision/*.csv
 tools/provision/*.bin
+
+# Archivos de referencia / binarios pesados — se quedan locales, no van al repo
+# (backups, PDFs, proyecto de EasyEDA, fotos y diagramas de PCB/rework).
+*.rar
+*.pdf
+*.epro
+*.jpg
+*.jpeg
+/cap_serial.py
+/docs/
+/assets/
+/Imagenes Display/
+/placa_*.png
+/placa_*.svg
+/rework_*.png
+/rework_*.svg
+/_rework_*.svg
