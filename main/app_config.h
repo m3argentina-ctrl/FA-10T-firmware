@@ -58,10 +58,10 @@
 #ifndef CLOUD_TELEMETRY_ENABLED
 #define CLOUD_TELEMETRY_ENABLED      WIFI_ENABLED
 #endif
-#define CLOUD_PUSH_INTERVAL_S        60       // heartbeat cada 60 s
+#define CLOUD_PUSH_INTERVAL_S        5        // heartbeat cada 5 s
 #define CLOUD_HTTP_TIMEOUT_MS        8000     // timeout del POST HTTPS
 #define CLOUD_RETRY_BACKOFF_MS       15000    // espera tras un push fallido
-#define CLOUD_TASK_STACK             8192     // TLS necesita stack grande
+#define CLOUD_TASK_STACK             12288    // TLS×2 (push+ack) + NVS recovery_clear
 #define CLOUD_TASK_PRIO              3        // baja: no compite con control/safety
 #define CLOUD_TASK_CORE              0        // protocolo en el core de UI/wifi
 

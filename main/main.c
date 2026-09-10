@@ -108,6 +108,14 @@ void app_main(void)
     return;
 #endif
 
+    esp_reset_reason_t rst = esp_reset_reason();
+    const char *rst_str[] = { "UNKNOWN","POWERON","EXT","SW","PANIC",
+                              "INT_WDT","TASK_WDT","WDT","DEEPSLEEP",
+                              "BROWNOUT","SDIO","USB","JTAG","EFUSE",
+                              "PWR_GLITCH","CPU_LOCKUP" };
+    ESP_LOGW(TAG, "reset reason: %d (%s)", (int)rst,
+             rst < sizeof(rst_str)/sizeof(rst_str[0]) ? rst_str[rst] : "?");
+
     ESP_LOGI(TAG, "Control ESP32-S3 v3.0 firmware boot%s%s",
              SIMULATION_MODE   ? " [SIMULATION]"      : "",
              SENSORS_SIMULATION ? " [SENSORS-SIM]"     : "");

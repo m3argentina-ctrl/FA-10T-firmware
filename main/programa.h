@@ -25,6 +25,10 @@ esp_err_t programa_load(uint8_t slot, programa_t *out);
 esp_err_t programa_save(uint8_t slot, const programa_t *p);
 esp_err_t programa_erase(uint8_t slot);
 
+// Lectura desde cache RAM (sin acceso NVS/flash). Seguro desde cualquier tarea,
+// incluso las que tienen stack en PSRAM (cloud_task).
+esp_err_t programa_load_cached(uint8_t slot, programa_t *out);
+
 // Launch a programs-mode session from slot or from a transient in-RAM
 // programa_t (slot = 0xFF). The caller may use this to "INICIAR" a freshly
 // configured set of stages without saving it to NVS first.

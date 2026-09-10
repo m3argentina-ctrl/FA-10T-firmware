@@ -14,6 +14,7 @@
 #include "tasks/sensor_task.h"
 #include "tasks/control_task.h"
 #include "tasks/ui_task.h"
+#include "cloud_telemetry.h"
 
 static const char *TAG = "watchdog_task";
 
@@ -33,6 +34,7 @@ static void log_stack_usage(void)
         { "sensor",  sensor_task_handle  },
         { "control", control_task_handle },
         { "ui",      ui_task_handle      },
+        { "cloud",   cloud_telemetry_task_handle },
         { "wdog",    watchdog_task_handle },
     };
     for (size_t i = 0; i < sizeof(tasks) / sizeof(tasks[0]); ++i) {

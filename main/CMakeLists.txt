@@ -24,6 +24,7 @@ idf_component_register(
         "web_server.c"
         "ota_update.c"
         "cloud_telemetry.c"
+        "cloud_command.c"
         "screens/ui_common.c"
         "screens/ui_keyboard.c"
         "screens/recovery_prompt.c"

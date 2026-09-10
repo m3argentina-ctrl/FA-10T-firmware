@@ -16,6 +16,10 @@ static const char *TAG = "programa";
 static float s_elapsed_frac;
 static const char *NS  = "fa10t_prog";
 
+// Cache en RAM de los 6 slots. Se carga al boot y se actualiza en save/erase.
+// Permite que cloud_task (stack PSRAM) lea la lista sin tocar NVS/flash.
+static programa_t s_cache[PROGRAMA_SLOTS];
+
 // ---------------------------------------------------------------------------
 // Recetas de fábrica. Un equipo NUEVO arranca con este set precargado en vez de
 // slots vacíos. Se siembran UNA sola vez (flag "seed_ver" en NVS); después el
@@ -83,10 +87,18 @@ static void seed_defaults(void)
     }
 }
 
+static void cache_reload(void)
+{
+    for (uint8_t s = 0; s < PROGRAMA_SLOTS; s++) {
+        if (programa_load(s, &s_cache[s]) != ESP_OK)
+            memset(&s_cache[s], 0, sizeof(s_cache[s]));
+    }
+}
+
 esp_err_t programa_init(void)
 {
-    // Slots viven en NVS; sembramos las recetas de fábrica si el equipo es nuevo.
     seed_defaults();
+    cache_reload();
     return ESP_OK;
 }
 
@@ -116,6 +128,13 @@ esp_err_t programa_load(uint8_t slot, programa_t *out)
     return ESP_OK;
 }
 
+esp_err_t programa_load_cached(uint8_t slot, programa_t *out)
+{
+    if (slot >= PROGRAMA_SLOTS || !out) return ESP_ERR_INVALID_ARG;
+    *out = s_cache[slot];
+    return out->used ? ESP_OK : ESP_ERR_NVS_NOT_FOUND;
+}
+
 esp_err_t programa_save(uint8_t slot, const programa_t *p)
 {
     if (slot >= PROGRAMA_SLOTS || !p) return ESP_ERR_INVALID_ARG;
@@ -125,7 +144,10 @@ esp_err_t programa_save(uint8_t slot, const programa_t *p)
     esp_err_t err = nvs_set_blob(h, key, p, sizeof(*p));
     if (err == ESP_OK) err = nvs_commit(h);
     nvs_close(h);
-    if (err == ESP_OK) ESP_LOGI(TAG, "slot %u saved '%s'", slot, p->nombre);
+    if (err == ESP_OK) {
+        s_cache[slot] = *p;
+        ESP_LOGI(TAG, "slot %u saved '%s'", slot, p->nombre);
+    }
     return err;
 }
 
@@ -138,6 +160,7 @@ esp_err_t programa_erase(uint8_t slot)
     esp_err_t err = nvs_erase_key(h, key);
     if (err == ESP_OK) err = nvs_commit(h);
     nvs_close(h);
+    if (err == ESP_OK) memset(&s_cache[slot], 0, sizeof(s_cache[slot]));
     return err;
 }
 

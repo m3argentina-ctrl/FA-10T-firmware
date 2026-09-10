@@ -13,6 +13,23 @@ static const char *TAG = "ui";
 
 static lv_obj_t *s_screens[UI_SCREEN_COUNT];
 
+// Navegación cross-task: cualquier tarea puede pedir un cambio de pantalla.
+static volatile int s_pending_screen = -1;
+
+void ui_request_screen(ui_screen_id_t id)
+{
+    s_pending_screen = (int)id;
+}
+
+void ui_process_pending_nav(void)
+{
+    int req = s_pending_screen;
+    if (req < 0) return;
+    s_pending_screen = -1;
+    ui_show_screen((ui_screen_id_t)req);
+    ESP_LOGI(TAG, "nav remota → pantalla %d", req);
+}
+
 // Font getters resolve to whichever Montserrat sizes are enabled in Kconfig.
 const lv_font_t *ui_font_xs (void) { return &lv_font_montserrat_10; }
 const lv_font_t *ui_font_sm (void) { return &lv_font_montserrat_12; }

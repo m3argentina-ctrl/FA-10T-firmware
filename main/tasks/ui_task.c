@@ -79,6 +79,7 @@ static void ui_task(void *arg)
         uint32_t idle_ms = 0;
         if (display_lvgl_lock(20)) {
             lv_timer_handler();
+            ui_process_pending_nav();
             idle_ms = lv_disp_get_inactive_time(NULL);   // ms desde el último touch
             display_lvgl_unlock();
             // Atenuar/restaurar fuera del lock (no es llamada LVGL). La función es

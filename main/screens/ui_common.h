@@ -45,6 +45,11 @@ typedef enum {
 void ui_common_init(void);     // creates all screens; call once after lv_init
 void ui_show_screen(ui_screen_id_t id);
 
+// Thread-safe: pide navegación desde cualquier tarea (cloud_command, etc.).
+// La UI task lo procesa en su próximo ciclo (~10 ms).
+void ui_request_screen(ui_screen_id_t id);
+void ui_process_pending_nav(void);
+
 // Returns the lv_obj_t* for the given screen id, or NULL if not built yet.
 // Used by the wizard to clean+rebuild PROG_STAGE / PROG_RESUMEN dynamically.
 lv_obj_t *ui_get_screen(ui_screen_id_t id);

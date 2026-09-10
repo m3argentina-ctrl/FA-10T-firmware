@@ -21,6 +21,8 @@
 #include "app_state.h"
 #include "telemetry.h"
 #include "wifi_manager.h"
+#include "cloud_command.h"
+#include "programa.h"
 
 // Fallback de compilación para la identidad (banco/desarrollo). El archivo real
 // device_identity.h está gitignored; si no existe, los defaults quedan vacíos y
@@ -134,9 +136,37 @@ static bool ensure_time_synced(void)
     return true;
 }
 
-// --- Push -------------------------------------------------------------------
-static esp_err_t push_snapshot(const char *reason)
+// --- Captura del response body via event handler ----------------------------
+typedef struct {
+    char  *buf;
+    size_t sz;
+    size_t off;
+} resp_ctx_t;
+
+static esp_err_t http_event_handler(esp_http_client_event_t *evt)
 {
+    resp_ctx_t *ctx = (resp_ctx_t *)evt->user_data;
+    if (!ctx || !ctx->buf) return ESP_OK;
+    if (evt->event_id == HTTP_EVENT_ON_DATA) {
+        size_t room = ctx->sz - ctx->off - 1;
+        size_t copy = (size_t)evt->data_len < room ? (size_t)evt->data_len : room;
+        if (copy > 0) {
+            memcpy(ctx->buf + ctx->off, evt->data, copy);
+            ctx->off += copy;
+            ctx->buf[ctx->off] = '\0';
+        }
+    }
+    return ESP_OK;
+}
+
+// --- Push -------------------------------------------------------------------
+// resp_buf/resp_sz: buffer para capturar el body de la respuesta (comandos).
+// Si resp_buf es NULL se ignora el body (backward compat).
+static esp_err_t push_snapshot(const char *reason, char *resp_buf, size_t resp_sz)
+{
+    resp_ctx_t resp_ctx = { .buf = resp_buf, .sz = resp_sz, .off = 0 };
+    if (resp_buf && resp_sz > 0) resp_buf[0] = '\0';
+
     app_state_lock();
     const app_state_t s = *app_state_get();
     app_state_unlock();
@@ -149,7 +179,7 @@ static esp_err_t push_snapshot(const char *reason)
     json_escape(modelo, sizeof modelo, s.modelo);
     json_escape(serie,  sizeof serie,  s.serie);
 
-    char body[1400];
+    char body[1800];
     int n = snprintf(body, sizeof body,
         "{"
         "\"id\":\"%s\",\"reason\":\"%s\","
@@ -187,7 +217,25 @@ static esp_err_t push_snapshot(const char *reason)
         (unsigned long)t.fan_fault_count, (unsigned long)t.power_fail_count,
         t.t_max_historica);
     if (n < 0) return ESP_FAIL;
-    if (n >= (int)sizeof body) n = (int)sizeof body - 1;   // truncado: improbable
+    if (n >= (int)sizeof body) n = (int)sizeof body - 1;
+
+    // Reemplazar el '}' final para agregar la lista de programas memorizados.
+    if (n > 0 && body[n - 1] == '}') {
+        --n;
+        n += snprintf(body + n, sizeof body - (size_t)n, ",\"progs\":[");
+        bool first_prog = true;
+        for (uint8_t s = 0; s < PROGRAMA_SLOTS && n < (int)sizeof body - 40; s++) {
+            programa_t pg;
+            if (programa_load_cached(s, &pg) != ESP_OK || !pg.used) continue;
+            char pname[2 * PROG_NAME_MAX];
+            json_escape(pname, sizeof pname, pg.nombre);
+            if (!first_prog) body[n++] = ',';
+            n += snprintf(body + n, sizeof body - (size_t)n,
+                          "{\"s\":%u,\"n\":\"%s\"}", (unsigned)s, pname);
+            first_prog = false;
+        }
+        n += snprintf(body + n, sizeof body - (size_t)n, "]}");
+    }
 
     char url[160];
     snprintf(url, sizeof url, "%s%s", s_base_url, CLOUD_INGEST_PATH);
@@ -198,7 +246,9 @@ static esp_err_t push_snapshot(const char *reason)
         .url               = url,
         .method            = HTTP_METHOD_POST,
         .timeout_ms        = CLOUD_HTTP_TIMEOUT_MS,
-        .crt_bundle_attach = esp_crt_bundle_attach,   // CA bundle Mozilla (sdkconfig)
+        .crt_bundle_attach = esp_crt_bundle_attach,
+        .event_handler     = http_event_handler,
+        .user_data         = &resp_ctx,
     };
     esp_http_client_handle_t c = esp_http_client_init(&cfg);
     if (!c) return ESP_FAIL;
@@ -219,8 +269,54 @@ static esp_err_t push_snapshot(const char *reason)
         ESP_LOGW(TAG, "push '%s' rechazado: HTTP %d", reason, code);
         return ESP_FAIL;
     }
-    ESP_LOGI(TAG, "push '%s' OK (HTTP %d, %d B)", reason, code, n);
+    ESP_LOGI(TAG, "push '%s' OK (HTTP %d, %d B, resp %u B)",
+             reason, code, n, (unsigned)resp_ctx.off);
     return ESP_OK;
+}
+
+// --- ACK de comandos --------------------------------------------------------
+#define CLOUD_ACK_PATH  "/api/command/ack"
+
+static void send_ack(const cloud_cmd_t *cmds, int count)
+{
+    if (count <= 0) return;
+
+    // Armar JSON: {"ids":["id1","id2",...]}
+    char body[512];
+    int off = snprintf(body, sizeof body, "{\"ids\":[");
+    for (int i = 0; i < count && off < (int)sizeof body - 10; i++) {
+        if (i > 0) body[off++] = ',';
+        off += snprintf(body + off, sizeof body - (size_t)off, "\"%s\"", cmds[i].id);
+    }
+    off += snprintf(body + off, sizeof body - (size_t)off, "]}");
+
+    char url[160];
+    snprintf(url, sizeof url, "%s%s", s_base_url, CLOUD_ACK_PATH);
+    char auth[160];
+    snprintf(auth, sizeof auth, "Bearer %s", s_token);
+
+    esp_http_client_config_t cfg = {
+        .url               = url,
+        .method            = HTTP_METHOD_POST,
+        .timeout_ms        = CLOUD_HTTP_TIMEOUT_MS,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+    };
+    esp_http_client_handle_t c = esp_http_client_init(&cfg);
+    if (!c) return;
+
+    esp_http_client_set_header(c, "Content-Type", "application/json");
+    esp_http_client_set_header(c, "Authorization", auth);
+    esp_http_client_set_post_field(c, body, off);
+
+    esp_err_t err = esp_http_client_perform(c);
+    int code = esp_http_client_get_status_code(c);
+    esp_http_client_cleanup(c);
+
+    if (err == ESP_OK && code >= 200 && code < 300) {
+        ESP_LOGI(TAG, "ACK de %d comando(s) OK", count);
+    } else {
+        ESP_LOGW(TAG, "ACK falló: %s (HTTP %d)", esp_err_to_name(err), code);
+    }
 }
 
 // --- Tarea ------------------------------------------------------------------
@@ -256,13 +352,23 @@ static void cloud_task(void *arg)
         const char *reason = first ? "boot" : (changed ? "state" : "heartbeat");
         if (changed && rs == RUN_STATE_ALARM) reason = "alarm";
 
-        if (push_snapshot(reason) == ESP_OK) {
+        char resp[1024];
+        if (push_snapshot(reason, resp, sizeof resp) == ESP_OK) {
             last_push = now;
             last_rs   = rs;
             first     = false;
+
+            // Procesar comandos remotos que llegaron en la respuesta.
+            cloud_cmd_t cmds[CMD_MAX];
+            int ncmd = cloud_cmd_parse(resp, cmds, CMD_MAX);
+            if (ncmd > 0) {
+                int acked = 0;
+                for (int i = 0; i < ncmd; i++) {
+                    if (cloud_cmd_execute(&cmds[i])) acked++;
+                }
+                if (acked > 0) send_ack(cmds, ncmd);
+            }
         } else {
-            // Backoff si el server está caído / sin internet: no martillar.
-            // La alarma se reintenta igual al próximo cambio de estado.
             vTaskDelay(pdMS_TO_TICKS(CLOUD_RETRY_BACKOFF_MS));
         }
     }
@@ -276,10 +382,10 @@ esp_err_t cloud_telemetry_start(void)
     s_provisioned = load_identity();
     if (!s_provisioned) return ESP_OK;   // inerte, no es error fatal
 
-    // El stack (8 KB) va a PSRAM: la DRAM interna ya está casi agotada al boot
-    // (~1.87 s) por LCD+LVGL+WiFi, y xTaskCreatePinnedToCore fallaba al pedir
-    // 8 KB internos. Con CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y el stack
-    // puede vivir en PSRAM (esta tarea nunca corre con la cache deshabilitada).
+    // Stack en PSRAM: la DRAM interna está casi agotada al boot por LCD+LVGL+WiFi.
+    // IMPORTANTE: esta tarea NO debe hacer escrituras NVS/flash (deshabilitan el
+    // cache SPI y el assert esp_task_stack_is_sane_cache_disabled() falla con
+    // stack en PSRAM → PANIC). Las operaciones NVS se difieren a watchdog_task.
     BaseType_t ok = xTaskCreatePinnedToCoreWithCaps(
         cloud_task, "cloud_tel", CLOUD_TASK_STACK, NULL,
         CLOUD_TASK_PRIO, &s_task, CLOUD_TASK_CORE, MALLOC_CAP_SPIRAM);
@@ -302,11 +408,14 @@ bool cloud_telemetry_is_provisioned(void) { return s_provisioned; }
 
 const char *cloud_telemetry_device_id(void) { return s_dev_id; }
 
+TaskHandle_t cloud_telemetry_task_handle(void) { return s_task; }
+
 #else  /* CLOUD_TELEMETRY_ENABLED == 0 — stubs no-op */
 
-esp_err_t   cloud_telemetry_start(void)          { return ESP_OK; }
-void        cloud_telemetry_stop(void)           { }
-bool        cloud_telemetry_is_provisioned(void) { return false; }
-const char *cloud_telemetry_device_id(void)      { return ""; }
+esp_err_t    cloud_telemetry_start(void)          { return ESP_OK; }
+void         cloud_telemetry_stop(void)           { }
+bool         cloud_telemetry_is_provisioned(void) { return false; }
+const char  *cloud_telemetry_device_id(void)      { return ""; }
+TaskHandle_t cloud_telemetry_task_handle(void)    { return NULL; }
 
 #endif

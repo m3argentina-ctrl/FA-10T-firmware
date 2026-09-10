@@ -69,9 +69,14 @@ void recovery_tick(float dt_s)
 {
     if (!s_mtx) return;
 
-    // 1. Leer el estado de sesión y armar el snapshot bajo app_state_lock.
-    //    "Sesión viva" = corriendo o pausada (si se corta la luz pausado,
-    //    igual queremos poder retomar). COMPLETED/IDLE no son recuperables.
+    // Todo bajo s_mtx: leer estado, decidir, y tocar NVS atómicamente.
+    // Esto evita la carrera con recovery_clear() llamado desde cloud_task:
+    // sin el lock unificado, recovery_tick podía leer active=true (stale),
+    // y DESPUÉS de que recovery_clear escribiera valid=false, reescribir
+    // valid=true con datos viejos → falsa recuperación al reiniciar.
+    xSemaphoreTake(s_mtx, portMAX_DELAY);
+
+    // 1. Leer estado bajo app_state_lock (dentro de s_mtx).
     app_state_lock();
     app_state_t *st = app_state_get();
     bool active = (st->op_mode != OP_MODE_IDLE) &&
@@ -90,35 +95,41 @@ void recovery_tick(float dt_s)
             snap.recipe.etapa_sp[i]         = st->etapa_sp[i];
             snap.recipe.etapa_duration_s[i] = st->etapa_duration_s[i];
         }
-        snap.recipe.humedad_objetivo = st->humidity_target;   // preservar auto-stop por humedad
+        snap.recipe.humedad_objetivo = st->humidity_target;
     }
     app_state_unlock();
 
-    // 2. Decidir guardar/limpiar bajo s_mtx (acumulador + flag de presencia).
-    xSemaphoreTake(s_mtx, portMAX_DELAY);
+    // 2. Decidir y escribir NVS (todo bajo s_mtx).
     s_accum_s += dt_s;
     bool interval   = (s_accum_s >= RECOVERY_SAVE_INTERVAL_S);
     if (interval) s_accum_s = 0.0f;
-    bool start_edge = active && !s_had_snapshot;   // recién arrancó una sesión
-    bool stop_edge  = !active && s_had_snapshot;    // recién terminó / se detuvo
+    bool start_edge = active && !s_had_snapshot;
+    bool stop_edge  = !active && s_had_snapshot;
     bool do_save    = active && (start_edge || interval);
     s_had_snapshot  = active;
-    xSemaphoreGive(s_mtx);
 
-    // 3. Tocar NVS fuera de todo lock. Guardamos apenas arranca la sesión (para
-    //    no perder los primeros 60 s) y luego cada RECOVERY_SAVE_INTERVAL_S.
-    //    Al terminar limpio borramos el slot → no se ofrece recuperación.
     if (do_save) {
         write_snap(&snap);
     } else if (stop_edge) {
-        recovery_clear();
+        recovery_snapshot_t empty = {0};
+        write_snap(&empty);
     }
+
+    xSemaphoreGive(s_mtx);
 }
 
 void recovery_clear(void)
 {
     recovery_snapshot_t empty = {0};
-    write_snap(&empty);
+    if (s_mtx) {
+        xSemaphoreTake(s_mtx, portMAX_DELAY);
+        s_had_snapshot = false;
+        s_accum_s = 0.0f;
+        write_snap(&empty);
+        xSemaphoreGive(s_mtx);
+    } else {
+        write_snap(&empty);
+    }
 }
 
 esp_err_t recovery_resume_from(const recovery_snapshot_t *snap)

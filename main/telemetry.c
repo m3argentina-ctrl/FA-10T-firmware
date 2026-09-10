@@ -21,6 +21,7 @@ static int                    s_event_head;
 static int                    s_event_count;
 static SemaphoreHandle_t      s_mtx;
 static float                  s_save_accum_s;
+static bool                   s_save_pending;
 static const float            SAVE_INTERVAL_S = 300.0f;   // 5 min
 
 static void load_from_nvs(void)
@@ -84,8 +85,8 @@ void telemetry_tick(float dt_s, bool session_running)
     s_data.hours_service_s += (uint32_t)(dt_s + 0.0001f);
     if (session_running) s_data.hours_total_s += (uint32_t)(dt_s + 0.0001f);
     s_save_accum_s += dt_s;
-    bool do_save = (s_save_accum_s >= SAVE_INTERVAL_S);
-    if (do_save) s_save_accum_s = 0.0f;
+    bool do_save = s_save_pending || (s_save_accum_s >= SAVE_INTERVAL_S);
+    if (do_save) { s_save_accum_s = 0.0f; s_save_pending = false; }
     xSemaphoreGive(s_mtx);
     if (do_save) save_to_nvs();
 }
@@ -104,9 +105,9 @@ void telemetry_note_session_end(bool completed)
     xSemaphoreTake(s_mtx, portMAX_DELAY);
     if (completed) s_data.sessions_completed++;
     else           s_data.sessions_interrupted++;
+    s_save_pending = true;
     xSemaphoreGive(s_mtx);
     telemetry_log_event(TELEM_EVT_SESSION_END, completed ? "completed" : "interrupted");
-    save_to_nvs();
 }
 
 void telemetry_note_fan_fault(void)

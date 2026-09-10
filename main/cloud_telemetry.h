@@ -23,6 +23,8 @@
 
 #include <stdbool.h>
 #include "esp_err.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -41,6 +43,9 @@ bool cloud_telemetry_is_provisioned(void);
 
 // dev_id cargado (string estático del módulo). "" si no provisto.
 const char *cloud_telemetry_device_id(void);
+
+// Handle de la tarea (para monitorear stack desde watchdog). NULL si no activa.
+TaskHandle_t cloud_telemetry_task_handle(void);
 
 #ifdef __cplusplus
 }
