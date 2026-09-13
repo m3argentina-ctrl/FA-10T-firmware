@@ -16,12 +16,13 @@ typedef enum {
     SAFETY_RUNAWAY         = 1 << 2,
     SAFETY_WDT_TIMEOUT     = 1 << 3,
     SAFETY_FAN_FAULT       = 1 << 4,
+    SAFETY_FAN_RELAY_STUCK = 1 << 5,
     // Warning bits — diagnostics only, do NOT cut the SSR.
     SAFETY_WARN_NEAR_LIMIT = 1 << 8,
 } safety_fault_t;
 
 #define SAFETY_TRIP_MASK   (SAFETY_OVERTEMP | SAFETY_SENSOR_FAULT | SAFETY_RUNAWAY | \
-                            SAFETY_WDT_TIMEOUT | SAFETY_FAN_FAULT)
+                            SAFETY_WDT_TIMEOUT | SAFETY_FAN_FAULT | SAFETY_FAN_RELAY_STUCK)
 #define SAFETY_WARN_MASK   (SAFETY_WARN_NEAR_LIMIT)
 
 typedef struct {
@@ -45,9 +46,11 @@ esp_err_t safety_wdt_unsubscribe(void);
 // limit_temperature: máx del bus 1-Wire (sonda junto a las resistencias) →
 //                    límite SAFETY_LIMIT_TEMP_C (90 °C). Pasar 0 si no aplica.
 // fan_fault:         caller-supplied, true if turbine current < 70% nominal.
+// fan_relay_stuck:   caller-supplied, true if duty=0 but current > 30% nominal.
 uint32_t safety_evaluate(float temperature, float limit_temperature,
                          float duty, float dt_s,
-                         bool sensor_fault, bool fan_fault);
+                         bool sensor_fault, bool fan_fault,
+                         bool fan_relay_stuck);
 
 uint32_t safety_get_faults(void);
 

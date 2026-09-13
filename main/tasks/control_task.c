@@ -86,14 +86,16 @@ static void control_task(void *arg)
         float sp_eff;
         bool  fan_on;
         bool  fan_fault;
+        bool  fan_relay_stuck;
         float rh;
         bool  rh_fault;
         app_state_lock();
-        sp_eff    = app_state_get()->effective_setpoint;
-        fan_on    = app_state_get()->fan_command_on;
-        fan_fault = app_state_get()->fan_fault;
-        rh        = app_state_get()->humidity;
-        rh_fault  = app_state_get()->humidity_fault;
+        sp_eff          = app_state_get()->effective_setpoint;
+        fan_on          = app_state_get()->fan_command_on;
+        fan_fault       = app_state_get()->fan_fault;
+        fan_relay_stuck = app_state_get()->fan_relay_stuck;
+        rh              = app_state_get()->humidity;
+        rh_fault        = app_state_get()->humidity_fault;
         app_state_unlock();
 
         const bool now_active = (sp_eff > 0.5f);
@@ -113,7 +115,8 @@ static void control_task(void *arg)
         }
 
         uint32_t faults = safety_evaluate(sample.temperature, sample.limit_temperature,
-                                          out, dt, sample.fault, fan_fault);
+                                          out, dt, sample.fault, fan_fault,
+                                          fan_relay_stuck);
 
         if (safety_consume_recovery_event()) {
             pid_reset(&pid);
@@ -176,6 +179,10 @@ static void control_task(void *arg)
         st->running       = !tripped && now_active;
         if (tripped && st->run_state != RUN_STATE_ALARM) {
             st->run_state = RUN_STATE_ALARM;
+        } else if (!tripped && st->run_state == RUN_STATE_ALARM &&
+                   st->op_mode == OP_MODE_IDLE) {
+            // Alarma disparada en reposo: no hay sesión cuyo stop la saque de ALARM.
+            st->run_state = RUN_STATE_IDLE;
         }
         // Integrar consumo SOLO mientras la sesión corre (incluye calentamiento).
         // Pausa/alarma/completado/idle no suman: el duty ya es 0 o el estado no es

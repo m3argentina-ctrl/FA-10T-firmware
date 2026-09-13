@@ -105,13 +105,10 @@
 #define IOEXP_OUTPUT_RUN         (IOEXP_BIT_LCD_TP_RST)     // LCD/TP RST released
 
 // -----------------------------------------------------------------------------
-// Conflictos con la PCB FA-10T  (ver CONFLICTOS_PINES.md para el análisis)
+// Pines del socket microSD (IO9, IO10, IO11) — NO usar
 // -----------------------------------------------------------------------------
-// El Waveshare expone IO9, IO10, IO11 al socket microSD CON pull-ups 10 kΩ a
-// 3V3 (R20, R22, R21). En la PCB FA-10T esos mismos pines llevan:
-//   GPIO9  = I_FAN
-//   GPIO10 = ACS712 V_OUT (ADC1_CH9)
-//   GPIO11 = (libre — el PT1000 se eliminó en la v3)
-// La presencia simultánea de los pull-ups del board y los divisores resistivos
-// de la PCB hace que ambos lados se interfieran. NO es resoluble por software.
+// El Waveshare los lleva al socket microSD CON pull-ups 10 kΩ a 3V3 (R20, R22,
+// R21): inservibles como ADC. La PCB v3 no usa ninguno (pinout de la placa en
+// PCB_v3/Guia_Cableado_V3.xlsx). La v1 sí (GPIO9 = I_FAN, GPIO10 = ACS712):
+// ver CONFLICTOS_PINES.md, que es histórico.
 // -----------------------------------------------------------------------------

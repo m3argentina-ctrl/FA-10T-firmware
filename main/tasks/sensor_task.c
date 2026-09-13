@@ -141,6 +141,19 @@ static void sensor_task(void *arg)
                 } else {
                     st->fan_fault = false;
                 }
+#if ACS712_ENABLED
+                // Sólo con medición real: con el ACS712 inerte `amps` es un mock fijo y daría siempre "pegado".
+                static int s_stuck_run;
+                const bool stuck_now = st->fan_nominal_known && st->fan_nominal > 0.05f &&
+                                       st->ssr_fan_duty < 0.01f &&
+                                       amps > ACS712_STUCK_RATIO * st->fan_nominal;
+                if (stuck_now) {
+                    if (s_stuck_run < ACS712_STUCK_DEBOUNCE) s_stuck_run++;
+                } else {
+                    s_stuck_run = 0;
+                }
+                st->fan_relay_stuck = (s_stuck_run >= ACS712_STUCK_DEBOUNCE);
+#endif
                 app_state_unlock();
             }
         }

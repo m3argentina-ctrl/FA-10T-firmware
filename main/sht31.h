@@ -30,6 +30,10 @@ esp_err_t sht31_heater(bool on);
 // Self-timed (usa esp_timer). Llamar ~1 Hz.
 esp_err_t sht31_read_managed(float *humidity_pct, float *temperature_c, bool *valid);
 
+// Escanea el bus I2C compartido (0x08–0x77). Devuelve cuántas direcciones
+// respondieron ACK, hasta max_addrs. Las direcciones se escriben en addrs_out.
+int sht31_bus_scan(uint8_t *addrs_out, int max_addrs);
+
 #ifdef __cplusplus
 }
 #endif

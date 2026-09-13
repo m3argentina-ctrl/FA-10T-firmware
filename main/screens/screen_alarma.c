@@ -1,4 +1,5 @@
 #include "ui_common.h"
+#include "app_config.h"
 #include "app_state.h"
 #include "safety.h"
 #include "ssr3ch.h"
@@ -15,8 +16,9 @@ static const char *fault_name(uint32_t mask)
 {
     if (mask & SAFETY_OVERTEMP)     return "SOBRETEMPERATURA";
     if (mask & SAFETY_RUNAWAY)      return "RUNAWAY TERMICO";
-    if (mask & SAFETY_FAN_FAULT)    return "FALLA DE TURBINA";
-    if (mask & SAFETY_SENSOR_FAULT) return "FALLA SONDA TEMP.";
+    if (mask & SAFETY_FAN_FAULT)       return "FALLA DE TURBINA";
+    if (mask & SAFETY_FAN_RELAY_STUCK) return "RELE FAN PEGADO";
+    if (mask & SAFETY_SENSOR_FAULT)    return "FALLA SONDA TEMP.";
     if (mask & SAFETY_WDT_TIMEOUT)  return "WATCHDOG TIMEOUT";
     return "SIN ALARMA";
 }
@@ -44,8 +46,12 @@ static void refresh_cb(lv_event_t *e)
     lv_label_set_text(s_fault_lbl, fault_name(s.safety_faults));
     snprintf(buf, sizeof(buf), "UPTIME %lus", (unsigned long)s.uptime_s);
     lv_label_set_text(s_time_lbl, buf);
+#if ACS712_ENABLED
     snprintf(buf, sizeof(buf), "I = %.3f A   /   NOM %.3f A", s.fan_current, s.fan_nominal);
     lv_label_set_text(s_curr_lbl, buf);
+#else
+    lv_label_set_text(s_curr_lbl, "SIN SENSOR DE CORRIENTE");
+#endif
     snprintf(buf, sizeof(buf), "TEMP %.1f C", s.last_sample.temperature);
     lv_label_set_text(s_temp_lbl, buf);
     snprintf(buf, sizeof(buf), "SESION %lus", (unsigned long)s.session_elapsed_s);

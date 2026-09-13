@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Firmware ESP-IDF del controlador táctil de deshidratadores industriales Bio Origen. Proyecto: **"CONTROL TACTIL ESP32"**. Identidad interna del código: **FA10T** (deviceId `FA10T-0001`, repo `FA-10T-firmware`, namespaces NVS `fa10t_*`, `project(fa10t_firmware)`). Código y comentarios en español.
 
-Hardware real (placa v3): ESP32-S3 + Waveshare ESP32-S3-Touch-LCD-3.5 (ST7796 + FT6336 + TCA9554), **2× DS18B20** (temperatura, 1-Wire), **1× SHT31** (humedad, I2C), **SSR 3 canales** (DRV resistencias / FAN turbina / AUX extractor).
+Hardware real (placa v3): ESP32-S3 + Waveshare ESP32-S3-Touch-LCD-3.5 (ST7796 + FT6336 + TCA9554), **2× DS18B20** (temperatura, 1-Wire), **1× SHT31** (humedad, I2C, 0x44) y 3 salidas vía ULN2803: DRV → SSR-3 trifásico (resistencias), FAN → relé DIN 12 VDC (turbinas, 220 V / 35 W c/u), AUX → relé DIN 12 VDC (extractor). **No hay sensor de corriente**: `ACS712_ENABLED=0` devuelve un valor fijo, así que la falla de turbina y la detección de relé pegado quedan inertes.
+
+**Pinout de la placa (fuente de verdad):** `D:\BIOORIGEN\DESHIDRATADORES\CONTROL TACTIL ESP32\PCB_v3\Guia_Cableado_V3.xlsx`. H1 → header del Waveshare: SCL GPIO7 → pin 26, SDA GPIO8 → pin 28, 1-Wire GPIO40 → pin 11, DRV GPIO21 → pin 5, FAN GPIO17 → pin 16, AUX GPIO18 → pin 18.
 
 ## Build / flash (Windows, ESP-IDF v6.0.1)
 
@@ -18,7 +20,7 @@ $py = "C:\Users\Emilio\.espressif\python_env\idf6.0_py3.14_env\Scripts\python.ex
 Write-Output "EXITCODE=$LASTEXITCODE"
 ```
 
-- Puertos: **COM3 = FA10T-0001**, **COM4 = FA10T-0002**.
+- Puertos: **COM3 = IND30S-0001**, **COM4 = FA10T-0002**. Sin cable: OTA por WiFi en `http://<IP>/update` subiendo `build/fa10t_firmware.bin` (rechaza si hay proceso en marcha).
 - Build incremental ~1-2 min; build limpio ~3 min. Correr con `run_in_background` y leer el `.output`.
 - No hay tests. La verificación es en hardware (flash + serial) o con `SIMULATION_MODE=1`.
 
@@ -29,7 +31,7 @@ Write-Output "EXITCODE=$LASTEXITCODE"
 - **Nunca commitear identidad/secretos.** Gitignorados: `main/device_identity.h` (el versionado es `device_identity.example.h`), `tools/provision/*.csv`, `tools/provision/*.bin`. Los tokens de dispositivo y la `DATABASE_URL` no van al repo.
 - **`SAFETY_BENCH_TEST` (app_config.h) DEBE estar en 0 con calefactor real** — con 1 se desactiva el detector de runaway (sin protección contra SSR pegado). Sólo se pone en 1 para ejercitar salidas en banco sin calefactor.
 - **`dashboard.html` va embebido en el binario** (`EMBED_TXTFILES` en CMakeLists) → editarlo NO tiene efecto hasta recompilar y reflashear.
-- `README.md` está **obsoleto** (describe la placa v1 con PT1000/MAX31865 SPI y componentes ya borrados). El pinout real está en `main/display_pins.h`; el mapeo del conector H1↔display está en una planilla externa (`Guia_Cableado_V3.xlsx`), no en el repo.
+- `README.md` y `CONFLICTOS_PINES.md` son de la placa v1 (PT1000/MAX31865, PC817, ACS712 en GPIO10): **obsoletos**, no usarlos para razonar sobre el hardware. `main/display_pins.h` es el pinout INTERNO del Waveshare (LCD, touch, expansor); el de la placa está en `Guia_Cableado_V3.xlsx` (fuera del repo, ver arriba).
 
 ## Arquitectura (lo que requiere leer varios archivos)
 
@@ -49,7 +51,7 @@ Write-Output "EXITCODE=$LASTEXITCODE"
 
 **Persistencia (NVS).** Config (`fa10t_config_t`: PID, calibración) en `components/nvs_config`. Identidad editable (modelo/serie/pin/módulos) en namespace `fa10t_id`. Recetas de programas en `fa10t_prog` (se siembran recetas de fábrica en equipos nuevos vía flag `seed_ver`). Contadores de telemetría + snapshot de recuperación (resume tras corte de luz). **La provisión de nube (dev_id/token) vive en una partición NVS aparte `factory`** (ver `partitions.csv`) que `nvs_flash_erase()` NO toca — por eso el RESET TOTAL de fábrica la conserva.
 
-**Comunicaciones** (todas bajo `#if WIFI_ENABLED` en `app_config.h`): servidor web local (`web_server.c`: `/`, `/api/status`, `/api/events`), OTA por WiFi (`ota_update.c`: `POST /update`), y telemetría a la nube (`cloud_telemetry.c`: HTTPS a bioorigen-web, identidad de la partición `factory`).
+**Comunicaciones** (todas bajo `#if WIFI_ENABLED` en `app_config.h`): servidor web local (`web_server.c`: `/`, `/api/status`, `/api/events`, `/api/diag` = scan del bus I2C + lectura del SHT31), OTA por WiFi (`ota_update.c`: `POST /update`), y telemetría a la nube (`cloud_telemetry.c`: HTTPS a bioorigen-web, identidad de la partición `factory`).
 
 ## Configuración clave (`main/app_config.h`)
 

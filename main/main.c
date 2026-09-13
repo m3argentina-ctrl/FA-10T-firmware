@@ -7,7 +7,7 @@
 //   4. ACS712 current sensor
 //   5. SHT31 humidity (also brings up the shared I2C bus)
 //   6. Safety subsystem (TWDT + runaway + fan fault)
-//   7. Pulse fans on, wait 3 s, learn nominal current, mark ready
+//   7. (sólo con ACS712_ENABLED) pulse fans on, learn nominal current
 //   8. Start FreeRTOS tasks (sensor, control, ui, watchdog)
 
 #include <stdio.h>
@@ -194,6 +194,8 @@ void app_main(void)
     //    es false al boot, no hay sesión activa) justo mientras
     //    acs712_learn_nominal() mide → aprendería ~0 A y la detección de falla
     //    de turbina quedaría inútil. Acá nadie compite por el SSR del fan.
+    //    Sin sensor de corriente (PCB v3) el pulso no mide nada → sólo con ACS712_ENABLED.
+#if ACS712_ENABLED
     ESP_LOGI(TAG, "spooling turbines to learn nominal current...");
     ssr3ch_set_duty(SSR_CH_FAN, 1.0f);
     vTaskDelay(pdMS_TO_TICKS(500));   // small delay before kicking off learn
@@ -211,6 +213,7 @@ void app_main(void)
     }
     // Apagar el fan: de acá en más lo gobierna control_task según la sesión.
     ssr3ch_set_duty(SSR_CH_FAN, 0.0f);
+#endif
 
     // 8. Tasks
     sensor_task_start();

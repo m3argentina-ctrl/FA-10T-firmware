@@ -1,6 +1,7 @@
 #include "ui_common.h"
 #include "ui_keyboard.h"
 #include "calib_prompt.h"
+#include "app_config.h"
 #include "app_state.h"
 #include "telemetry.h"
 #include "nvs_config.h"
@@ -65,11 +66,15 @@ static void update_cb(lv_timer_t *t)
     snprintf(buf, sizeof(buf), "%.1f/%.2f", cfg.kp, cfg.ki);
     lv_label_set_text(s_box_pid, buf);
 
+#if ACS712_ENABLED
     app_state_lock();
     float fan_nom = app_state_get()->fan_nominal;
     app_state_unlock();
     snprintf(buf, sizeof(buf), "%.3f A", fan_nom);
     lv_label_set_text(s_box_curr, buf);
+#else
+    lv_label_set_text(s_box_curr, "--");   // PCB v3 sin sensor de corriente
+#endif
 
     snprintf(buf, sizeof(buf), "%.1f \xC2\xB0""C", snap.t_max_historica);
     lv_label_set_text(s_box_tmax, buf);

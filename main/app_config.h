@@ -113,54 +113,32 @@
 // (ruido de ±6 °C en el ADC) y el ADS1115 no se conseguía en el país.
 // El histórico completo está en git y en la doc del proyecto.
 
-// --- ACS712-5A current sensor (turbine) -------------------------------------
-// DESHABILITADO en HW actual: GPIO10 del board Waveshare es SD_MOSI con
-// pull-up 10kΩ a 3V3 (R22), inutilizable como ADC (ver CONFLICTOS_PINES.md).
-// TODO v2: reactivar ACS712 vía ADS1115 por I2C (sin compartir GPIO con SD).
+// --- ACS712-5A (corriente de turbinas) — NO EXISTE en la PCB v3 -------------
+// La v3 no tiene sensor de corriente (ni ACS712 ni CT). Con 0 el driver devuelve
+// ACS712_MOCK_NOMINAL_A fijo y quedan inertes la falla de turbina, la detección
+// de relé FAN pegado y el pulso de FAN al arrancar. Si se agrega un sensor, la
+// falla de turbina hoy se evalúa aun con el FAN apagado: condicionarla al FAN ON.
+// (v1: iba a GPIO10 = SD_MOSI del Waveshare con pull-up 10 kΩ → ADC inusable.)
 #define ACS712_ENABLED               0
-#define ACS712_MOCK_NOMINAL_A        0.45f           // valor sano publicado a la UI mientras esté inerte
-#define PIN_ACS712_ADC               10              // sólo histórico — no se configura el ADC
+#define ACS712_MOCK_NOMINAL_A        0.45f           // valor fijo mientras no haya sensor
+#define PIN_ACS712_ADC               10              // sólo histórico (v1) — no se configura
 #define ACS712_VREF_V                2.5f            // V at 0A
 #define ACS712_SENS_V_PER_A          0.185f          // 185 mV/A for ACS712-5A
 #define ACS712_RMS_SAMPLES           200             // 200 samples → 100ms @ 2kHz
 #define ACS712_SAMPLE_INTERVAL_US    500
 #define ACS712_LEARN_DURATION_MS     3000            // average for 3s on boot
 #define ACS712_FAULT_RATIO           0.70f           // <70% of nominal = fault
+#define ACS712_STUCK_RATIO           0.30f           // >30% of nominal with duty=0 = relay stuck
+#define ACS712_STUCK_DEBOUNCE        5               // lecturas consecutivas para confirmar
 
-// --- SSR 3 channels ---------------------------------------------------------
-// Control time-proportional, período 1 s, vía optoacopladores PC817C en la
-// placa FA-10T. Los módulos de potencia son SSR a TRIAC con driver MOC3041
-// (opto zero-cross). La entrada "12VCC" del módulo es la SEÑAL DE DISPARO
-// ACTIVE-HIGH (12 V = ON, 0 V = OFF) — NO una alimentación permanente; el LED
-// del módulo indica esa entrada energizada (= salida ON). La FA-10T conmuta
-// esos 12 V por canal con el PC817 comandado por el GPIO (cadena active-high:
-// GPIO alto → PC817 → 12 V → MOC3041 → ON) y un pull-down en la línea del GPIO
-// que mantiene OFF durante el boot. Por eso SSR_ACTIVE_HIGH = true.
-// 2026-06-03: "siempre encendido" en banco = los 12VCC quedaron a 12 V fijos
-// (deben ir a la salida CONMUTADA de la FA-10T, no a 12 V permanente).
-//
-// GPIO assignment — pinout J8 del Waveshare ESP32-S3-Touch-LCD-3.5:
-//   H1 Pin 4  (ADC_IN)   → GPIO4  → J8 Pin 7
-//   H1 Pin 5  (SSR_DRV)  → GPIO21 → J8           ✓ VERIFICADO (cableado real)
-//   H1 Pin 6  (SSR_FAN)  → GPIO17 → J8 Pin 17
-//   H1 Pin 7  (SSR_AUX)  → GPIO18 → J8 Pin 9
-//   H1 Pin 9  (I2C_SDA)  → GPIO8  → J8 Pin 28
-//   H1 Pin 10 (I2C_SCL)  → GPIO7  → J8 Pin 26
-//
-// 2026-05-30: GPIO21 CONFIRMADO por Emilio como el cableado real del SSR_DRV
-// en este display — sin más incertidumbre. (Histórico: el 2026-05-28 se
-// reportó por error GPIO23 en J8 Pin 11, pero el ESP32-S3 NO tiene GPIO22..25
-// físicamente —datasheet tabla 2-1: pads válidos 0..21 y 26..48— y ESP-IDF
-// aborta con "GPIO_PIN mask error" al gpio_config() sobre GPIO23.)
-// --- PLACA v3 (2026-08): cadena de salida NUEVA -----------------------------
-// Los pines NO cambian (GPIO21/17/18), pero la electrónica sí:
-//   GPIO → ULN2803 (driver, low-side) → carga con el otro extremo a +12V.
-//   El ULN sinkea a GND cuando el GPIO está en ALTO → sigue siendo ACTIVE-HIGH
-//   (GPIO alto = carga ON), así que SSR_ACTIVE_HIGH = true se mantiene.
-//   DRV (GPIO21) → SSR-3 D38120 trifásico (RESIST)   — time-proportional (PID)
-//   FAN (GPIO17) → bobina relé DIN 12VDC (turbinas)   — on/off
-//   AUX (GPIO18) → bobina relé DIN 12VDC (extractor)  — on/off por humedad
-// Conector display H1: pin6=DRV(GPIO21), pin7=FAN(GPIO17), pin8=AUX(GPIO18).
+// --- Salidas (PCB v3) --------------------------------------------------------
+// GPIO → ULN2803 (low-side) → carga con el otro extremo a +12 V. El ULN conduce
+// con el GPIO en ALTO → active-high (SSR_ACTIVE_HIGH = true).
+//   DRV  GPIO21 (H1.6 → pin 5 del header)  → SSR-3 D38120 trifásico (resistencias), time-proportional (PID)
+//   FAN  GPIO17 (H1.7 → pin 16 del header) → bobina relé DIN 12 VDC (turbinas), on/off
+//   AUX  GPIO18 (H1.8 → pin 18 del header) → bobina relé DIN 12 VDC (extractor), on/off por humedad
+// Pinout completo de la placa: PCB_v3/Guia_Cableado_V3.xlsx (carpeta del proyecto).
+// La v1 (PC817 + SSR con MOC3041, tabla "J8") quedó en el historial de git.
 #define PIN_SSR_DRV                  21    // RESIST → SSR-3 D38120 (H1 pin 6)
 #define PIN_SSR_FAN                  17    // FAN    → relé 12VDC   (H1 pin 7)
 #define PIN_SSR_AUX                  18    // AUX    → relé 12VDC   (H1 pin 8)
@@ -186,11 +164,10 @@
 // consumo de UN módulo (session_energy_wh / session_fan_on_s) y tanto el LCD
 // como la nube lo multiplican por num_modulos.
 //   - Resistencia: 2000 W a 220 V (carga resistiva, FP≈1).
-//   - Turbina:     motor de polo de sombra 220 V × 0,40 A = 88 VA ≈ 88 W.
-//                  (potencia aparente; la activa es algo menor por el FP bajo
-//                  del shaded-pole, pero es marginal frente a los 2000 W).
+//   - Turbina:     motor de polo de sombra 220 V, 35 W de chapa (potencia activa;
+//                  la corriente ~0,35 A da más VA por el FP bajo del shaded-pole).
 #define RES_WATTS_PER_MODULE         2000.0f
-#define FAN_WATTS_PER_MODULE         88.0f
+#define FAN_WATTS_PER_MODULE         35.0f
 
 // --- I2C bus (shared SHT31 + PCF85063 RTC) ----------------------------------
 #define PIN_I2C_SCL                  7

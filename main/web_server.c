@@ -14,6 +14,7 @@
 #include "telemetry.h"
 #include "wifi_manager.h"
 #include "cloud_telemetry.h"
+#include "sht31.h"
 
 static const char *TAG = "web_server";
 
@@ -143,6 +144,48 @@ static esp_err_t events_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+// GET /api/diag → diagnóstico I2C: escanea el bus y lee status del SHT31.
+static esp_err_t diag_get_handler(httpd_req_t *req)
+{
+    uint8_t addrs[16];
+    int n = sht31_bus_scan(addrs, sizeof(addrs));
+
+    bool sht31_found = false;
+    for (int i = 0; i < n; i++) {
+        if (addrs[i] == SHT31_I2C_ADDR) sht31_found = true;
+    }
+
+    float rh = 0, t = 0;
+    bool valid = false;
+    esp_err_t serr = sht31_read_managed(&rh, &t, &valid);
+
+    app_state_lock();
+    bool hum_fault = app_state_get()->humidity_fault;
+    float hum_last = app_state_get()->humidity;
+    app_state_unlock();
+
+    char buf[512];
+    int pos = snprintf(buf, sizeof(buf),
+        "{\"i2c_devices\":[");
+    for (int i = 0; i < n; i++) {
+        pos += snprintf(buf + pos, sizeof(buf) - pos,
+            "%s\"0x%02X\"", i ? "," : "", addrs[i]);
+    }
+    pos += snprintf(buf + pos, sizeof(buf) - pos,
+        "],\"sht31_on_bus\":%s,"
+        "\"sht31_read\":\"%s\",\"sht31_valid\":%s,"
+        "\"sht31_rh\":%.1f,\"sht31_t\":%.1f,"
+        "\"hum_fault\":%s,\"hum_last\":%.1f}",
+        sht31_found ? "true" : "false",
+        esp_err_to_name(serr), valid ? "true" : "false",
+        rh, t,
+        hum_fault ? "true" : "false", hum_last);
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, buf, pos);
+}
+
 esp_err_t web_server_start(void)
 {
     if (s_server) return ESP_OK;
@@ -150,7 +193,7 @@ esp_err_t web_server_start(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port      = 80;
     config.lru_purge_enable = true;          // recicla sockets si se llenan
-    config.max_uri_handlers = 8;   // 3 propios + 2 de OTA
+    config.max_uri_handlers = 10;  // 4 propios + 2 de OTA
     // Subir un firmware de ~1,8 MB es mucho mas exigente que servir el
     // dashboard: mas stack (esp_ota_write escribe flash) y timeouts holgados
     // para que una red lenta no corte la transferencia a mitad de camino.
@@ -171,9 +214,12 @@ esp_err_t web_server_start(void)
         .uri = "/api/status", .method = HTTP_GET, .handler = status_get_handler };
     static const httpd_uri_t events = {
         .uri = "/api/events", .method = HTTP_GET, .handler = events_get_handler };
+    static const httpd_uri_t diag = {
+        .uri = "/api/diag", .method = HTTP_GET, .handler = diag_get_handler };
     httpd_register_uri_handler(s_server, &root);
     httpd_register_uri_handler(s_server, &status);
     httpd_register_uri_handler(s_server, &events);
+    httpd_register_uri_handler(s_server, &diag);
 
     // Endpoints de actualizacion de firmware por WiFi (GET/POST /update). Es la
     // via para actualizar un equipo en casa del cliente SIN cable USB.

@@ -111,7 +111,8 @@ static void start_recovery_ramp(void)
 
 uint32_t safety_evaluate(float temperature, float limit_temperature,
                          float duty, float dt_s,
-                         bool sensor_fault, bool fan_fault)
+                         bool sensor_fault, bool fan_fault,
+                         bool fan_relay_stuck)
 {
     safety_lock();
     s.faults = 0;
@@ -124,6 +125,10 @@ uint32_t safety_evaluate(float temperature, float limit_temperature,
         // Latch: a turbine fault must be acknowledged. Without airflow the
         // heater is unsafe regardless of temperature reading.
         trip(SAFETY_FAN_FAULT, "turbine current below nominal", true);
+    }
+
+    if (fan_relay_stuck) {
+        trip(SAFETY_FAN_RELAY_STUCK, "fan relay stuck (current with duty=0)", true);
     }
 
     if (!sensor_fault && temperature > s.cfg.temp_max_c) {

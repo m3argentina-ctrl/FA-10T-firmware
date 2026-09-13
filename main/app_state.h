@@ -65,6 +65,7 @@ typedef struct {
     float           fan_nominal;
     bool            fan_nominal_known;
     bool            fan_fault;
+    bool            fan_relay_stuck;     // duty=0 pero ACS712 lee corriente
 
     // --- Operation / session state ----------------------------------------
     op_mode_t       op_mode;

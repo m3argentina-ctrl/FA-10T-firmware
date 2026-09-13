@@ -59,6 +59,18 @@ esp_err_t sht31_init(void)
     };
     ESP_RETURN_ON_ERROR(i2c_master_bus_add_device(s_bus, &dev_cfg, &s_dev), TAG, "add_dev");
 
+    // Soft reset: saca al SHT31 de un estado stuck (bus glitch, corte de
+    // alimentación sin POR limpio, etc.). Comando 0x30A2, esperar ≥1.5 ms.
+    const uint8_t rst_cmd[2] = { 0x30, 0xA2 };
+    esp_err_t rst = i2c_master_transmit(s_dev, rst_cmd, sizeof(rst_cmd), 100);
+    if (rst == ESP_OK) {
+        vTaskDelay(pdMS_TO_TICKS(5));
+        ESP_LOGI(TAG, "SHT31 soft reset OK");
+    } else {
+        ESP_LOGW(TAG, "SHT31 soft reset falló: %s (sensor ausente o I2C NACK)",
+                 esp_err_to_name(rst));
+    }
+
     s_ready = true;
     ESP_LOGI(TAG, "SHT31 init: SDA=%d SCL=%d addr=0x%02X",
              PIN_I2C_SDA, PIN_I2C_SCL, SHT31_I2C_ADDR);
@@ -188,4 +200,17 @@ esp_err_t sht31_read_managed(float *humidity_pct, float *temperature_c, bool *va
     }
     return ESP_OK;
 #endif
+}
+
+int sht31_bus_scan(uint8_t *addrs_out, int max_addrs)
+{
+    if (!s_bus || !addrs_out || max_addrs <= 0) return 0;
+    int found = 0;
+    for (uint16_t addr = 0x08; addr < 0x78; ++addr) {
+        if (found >= max_addrs) break;
+        if (i2c_master_probe(s_bus, addr, 50) == ESP_OK) {
+            addrs_out[found++] = (uint8_t)addr;
+        }
+    }
+    return found;
 }
