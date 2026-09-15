@@ -55,3 +55,10 @@ tools/provision/*.bin
 /rework_*.png
 /rework_*.svg
 /_rework_*.svg
+
+# Carpeta unificada del proyecto (2026-09-15): la documentación, la PCB v3 y las
+# imágenes viven junto al firmware pero no van a git (respaldo en D: y en el pen).
+# docs/ (manuales, instructivos y sus fuentes) ya está ignorada arriba.
+/PCB_v3/
+/Imagenes/
+/_INDICE_PROYECTO.md

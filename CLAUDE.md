@@ -6,7 +6,7 @@ Firmware ESP-IDF del controlador táctil de deshidratadores industriales Bio Ori
 
 Hardware real (placa v3): ESP32-S3 + Waveshare ESP32-S3-Touch-LCD-3.5 (ST7796 + FT6336 + TCA9554), **2× DS18B20** (temperatura, 1-Wire), **1× SHT31** (humedad, I2C, 0x44) y 3 salidas vía ULN2803: DRV → SSR-3 trifásico (resistencias), FAN → relé DIN 12 VDC (turbinas, 220 V / 35 W c/u), AUX → relé DIN 12 VDC (extractor). **No hay sensor de corriente**: `ACS712_ENABLED=0` devuelve un valor fijo, así que la falla de turbina y la detección de relé pegado quedan inertes.
 
-**Pinout de la placa (fuente de verdad):** `D:\BIOORIGEN\DESHIDRATADORES\CONTROL TACTIL ESP32\PCB_v3\Guia_Cableado_V3.xlsx`. H1 → header del Waveshare: SCL GPIO7 → pin 26, SDA GPIO8 → pin 28, 1-Wire GPIO40 → pin 11, DRV GPIO21 → pin 5, FAN GPIO17 → pin 16, AUX GPIO18 → pin 18.
+**Pinout de la placa (fuente de verdad):** `PCB_v3\Guia_Cableado_V3.xlsx`, en esta misma carpeta. Desde el 2026-09-15 esta carpeta es la única de trabajo del proyecto: `PCB_v3\`, `docs\` (manuales y sus fuentes) e `Imagenes\` viven acá pero no se versionan; `D:\BIOORIGEN\DESHIDRATADORES\CONTROL TACTIL ESP32\` y `E:\CONTROL TACTIL ESP32\` son copias de respaldo (ver `_INDICE_PROYECTO.md`). H1 → header del Waveshare: SCL GPIO7 → pin 26, SDA GPIO8 → pin 28, 1-Wire GPIO40 → pin 11, DRV GPIO21 → pin 5, FAN GPIO17 → pin 16, AUX GPIO18 → pin 18.
 
 ## Build / flash (Windows, ESP-IDF v6.0.1)
 
@@ -31,7 +31,7 @@ Write-Output "EXITCODE=$LASTEXITCODE"
 - **Nunca commitear identidad/secretos.** Gitignorados: `main/device_identity.h` (el versionado es `device_identity.example.h`), `tools/provision/*.csv`, `tools/provision/*.bin`. Los tokens de dispositivo y la `DATABASE_URL` no van al repo.
 - **`SAFETY_BENCH_TEST` (app_config.h) DEBE estar en 0 con calefactor real** — con 1 se desactiva el detector de runaway (sin protección contra SSR pegado). Sólo se pone en 1 para ejercitar salidas en banco sin calefactor.
 - **`dashboard.html` va embebido en el binario** (`EMBED_TXTFILES` en CMakeLists) → editarlo NO tiene efecto hasta recompilar y reflashear.
-- `README.md` y `CONFLICTOS_PINES.md` son de la placa v1 (PT1000/MAX31865, PC817, ACS712 en GPIO10): **obsoletos**, no usarlos para razonar sobre el hardware. `main/display_pins.h` es el pinout INTERNO del Waveshare (LCD, touch, expansor); el de la placa está en `Guia_Cableado_V3.xlsx` (fuera del repo, ver arriba).
+- `README.md` y `CONFLICTOS_PINES.md` son de la placa v1 (PT1000/MAX31865, PC817, ACS712 en GPIO10): **obsoletos**, no usarlos para razonar sobre el hardware. `main/display_pins.h` es el pinout INTERNO del Waveshare (LCD, touch, expansor); el de la placa está en `PCB_v3\Guia_Cableado_V3.xlsx` (no versionado, ver arriba).
 
 ## Arquitectura (lo que requiere leer varios archivos)
 

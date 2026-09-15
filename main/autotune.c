@@ -29,6 +29,7 @@ typedef struct {
     float ku[AUTOTUNE_MAX_CYCLES];
     float pu[AUTOTUNE_MAX_CYCLES];
     float kp, ki, kd, ku_avg, pu_avg;
+    float spread;                   // diferencia relativa entre los últimos AUTOTUNE_CYCLES ciclos
     char  reason[40];
     bool  cancel_req;
     char  cancel_reason[40];
@@ -53,16 +54,21 @@ static bool running_locked(void)
     return s.state == AUTOTUNE_HEATING || s.state == AUTOTUNE_RELAY;
 }
 
-static void finish_locked(autotune_state_t st, const char *reason)
+// cool: ventilar después como un enfriamiento. Sólo cuando el autotune termina o se
+// aborta solo; si lo corta una persona (CANCELAR, web, alarma) se apaga todo en el
+// momento, igual que DETENER en un proceso.
+static void finish_locked(autotune_state_t st, const char *reason, bool cool)
 {
     s.state    = st;
     s.relay_on = false;
-    s.cooling  = true;               // ventila después, igual que tras un proceso
+    s.cooling  = cool;
     s.cool_s   = 0.0f;
     snprintf(s.reason, sizeof s.reason, "%s", reason ? reason : "");
 }
 
-// Tyreus-Luyben sobre los últimos ciclos: conservador, prioriza no pasarse del SP.
+// Tyreus-Luyben sobre los últimos AUTOTUNE_CYCLES ciclos, pero sólo cuando salen parejos
+// (Ku y período dentro de AUTOTUNE_STEADY_TOL): mientras el sesgo del relé se acomoda los
+// primeros ciclos varían, así que se sigue midiendo hasta AUTOTUNE_MAX_CYCLES.
 static void compute_locked(void)
 {
     const int n0 = s.n - AUTOTUNE_CYCLES;
@@ -75,10 +81,11 @@ static void compute_locked(void)
         ksum += s.ku[i];
         psum += s.pu[i];
     }
-    const bool steady = (kmax <= 1.25f * kmin) && (pmax <= 1.25f * pmin);
+    s.spread = fmaxf(kmax / kmin, pmax / pmin) - 1.0f;
+    const bool steady = (s.spread <= AUTOTUNE_STEADY_TOL);
     if (!steady && s.n < AUTOTUNE_MAX_CYCLES) return;
     if (!steady && (kmax > 1.5f * kmin || pmax > 1.5f * pmin)) {
-        finish_locked(AUTOTUNE_ABORTED, "OSCILACION IRREGULAR");
+        finish_locked(AUTOTUNE_ABORTED, "OSCILACION IRREGULAR", true);
         return;
     }
     s.ku_avg = ksum / AUTOTUNE_CYCLES;
@@ -89,7 +96,7 @@ static void compute_locked(void)
     s.kp = kp;
     s.ki = kp / ti;
     s.kd = kp * td;
-    finish_locked(AUTOTUNE_DONE, "");
+    finish_locked(AUTOTUNE_DONE, "", true);
 }
 
 static void record_locked(float ku, float pu)
@@ -129,7 +136,7 @@ static float relay_step_locked(float temp)
                 record_locked(4.0f * s.d / (AT_PI * sqrtf(a * a - h * h)), s.t_high + t_low);
                 if (!running_locked()) return 0.0f;
             } else if (++s.n_small >= 3) {
-                finish_locked(AUTOTUNE_ABORTED, "OSCILACION MUY CHICA");
+                finish_locked(AUTOTUNE_ABORTED, "OSCILACION MUY CHICA", true);
                 return 0.0f;
             }
             s.bias += s.d * (s.t_high - t_low) / (s.t_high + t_low);
@@ -207,12 +214,14 @@ void autotune_get_status(autotune_status_t *out)
     out->temp      = s.temp;
     out->duty      = running_locked() ? (s.relay_on ? s.bias + s.d : s.bias - s.d) : 0.0f;
     out->cycles    = s.n;
+    out->spread    = s.spread;
     out->elapsed_s = s.elapsed_s;
     out->kp        = s.kp;
     out->ki        = s.ki;
     out->kd        = s.kd;
     out->ku        = s.ku_avg;
     out->pu        = s.pu_avg;
+    out->cooling   = s.cooling;
     snprintf(out->reason, sizeof out->reason, "%s", s.reason);
     unlock();
 }
@@ -239,6 +248,7 @@ float autotune_step(float temp, bool sensor_fault, bool session_active, float dt
 {
     if (!s_mtx) return 0.0f;
     char  msg[TELEM_EVENT_MSG_MAX] = "";
+    char  cyc[TELEM_EVENT_MSG_MAX] = "";   // un evento por ciclo medido (diagnóstico)
     float out = 0.0f;
 
     lock();
@@ -252,9 +262,19 @@ float autotune_step(float temp, bool sensor_fault, bool session_active, float dt
         else if (temp > s.sp + AUTOTUNE_MAX_OVER_C) why = "SE PASO 10 C DEL SP";
         else if (s.elapsed_s > AUTOTUNE_TIMEOUT_S)  why = "TIEMPO AGOTADO";
 
-        if (why) finish_locked(AUTOTUNE_ABORTED, why);
+        const int n_before = s.n;
+        // Cancelado por una persona → sin ventilación posterior.
+        if (why) finish_locked(AUTOTUNE_ABORTED, why, !s.cancel_req);
         else     out = relay_step_locked(temp);
 
+        if (s.n > n_before) {
+            if (s.n >= AUTOTUNE_CYCLES)
+                snprintf(cyc, sizeof cyc, "autotune ciclo %d: Ku %.3g Pu %.0fs dif %.0f%%",
+                         s.n, s.ku[s.n - 1], s.pu[s.n - 1], s.spread * 100.0f);
+            else
+                snprintf(cyc, sizeof cyc, "autotune ciclo %d: Ku %.3g Pu %.0fs",
+                         s.n, s.ku[s.n - 1], s.pu[s.n - 1]);
+        }
         if (s.state == AUTOTUNE_DONE) {
             snprintf(msg, sizeof msg, "autotune OK Kp %.3g Ki %.3g Kd %.3g", s.kp, s.ki, s.kd);
         } else if (s.state == AUTOTUNE_ABORTED) {
@@ -272,6 +292,10 @@ float autotune_step(float temp, bool sensor_fault, bool session_active, float dt
     }
     unlock();
 
+    if (cyc[0]) {
+        ESP_LOGI(TAG, "%s", cyc);
+        telemetry_log_event(TELEM_EVT_SERVICE, "%s", cyc);
+    }
     if (msg[0]) {
         ESP_LOGW(TAG, "%s", msg);
         telemetry_log_event(TELEM_EVT_SERVICE, "%s", msg);

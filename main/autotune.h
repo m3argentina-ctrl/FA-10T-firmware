@@ -16,16 +16,20 @@ typedef struct {
     float    sp;
     float    temp;
     float    duty;          // salida actual del relé (0..1)
-    int      cycles;        // ciclos medidos
+    int      cycles;        // ciclos medidos (se piden AUTOTUNE_CYCLES parejos, no un total)
+    float    spread;        // diferencia entre los últimos AUTOTUNE_CYCLES (0,31 = 31 %)
     float    elapsed_s;
     float    kp, ki, kd;    // resultado (DONE)
     float    ku, pu;        // ganancia última y período promedio (DONE)
     char     reason[40];    // motivo (ABORTED)
+    bool     cooling;       // turbinas ventilando después de terminar (no tras un CANCELAR)
 } autotune_status_t;
 
 void      autotune_init(void);
 esp_err_t autotune_start(float sp);             // ESP_ERR_INVALID_STATE: proceso, alarma o sonda en falla
-void      autotune_cancel(const char *reason);  // thread-safe; se aplica en el próximo ciclo de control
+// Corte pedido por una persona (UI, web, alarma): thread-safe, se aplica en el próximo
+// ciclo de control y apaga resistencias Y turbinas (sin ventilación posterior).
+void      autotune_cancel(const char *reason);
 void      autotune_ack(void);                   // DONE/ABORTED → IDLE (tras ACEPTAR / DESCARTAR / CERRAR)
 void      autotune_get_status(autotune_status_t *out);
 bool      autotune_is_running(void);            // HEATING o RELAY: el autotune maneja las resistencias

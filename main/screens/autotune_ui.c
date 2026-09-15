@@ -49,6 +49,11 @@ static void refresh(void)
     fa10t_config_t cfg;
     app_state_copy_config(&cfg);
     char buf[240];
+    char cool[80] = "";   // aviso de ventilación posterior (termina o aborta solo)
+    if (st.cooling) {
+        snprintf(cool, sizeof cool, "\nLas turbinas siguen ventilando hasta %d \xC2\xB0""C (max. %d min).",
+                 (int)COOLDOWN_TEMP_C, COOLDOWN_DURATION_S / 60);
+    }
 
     snprintf(buf, sizeof buf, "Actual: Kp %.3f   Ki %.5f   Kd %.2f   (%s)",
              cfg.kp, cfg.ki, cfg.kd, autotune_is_tuned() ? "autotune" : "fabrica");
@@ -82,11 +87,24 @@ static void refresh(void)
         lv_label_set_text(s_btn_main_lbl, "CANCELAR");
         lv_obj_set_style_bg_color(s_btn_main, UI_COL_RED, 0);
         const unsigned el = (unsigned)st.elapsed_s;
+        // Pide AUTOTUNE_CYCLES ciclos PAREJOS, no un total: mide hasta que los últimos se
+        // parezcan dentro de AUTOTUNE_STEADY_TOL, con tope en AUTOTUNE_MAX_CYCLES.
+        char prog[112];
+        if (st.cycles >= AUTOTUNE_CYCLES) {
+            snprintf(prog, sizeof prog,
+                     "Ciclos: %d (max. %d)     Tiempo %02u:%02u\n"
+                     "Diferencia entre los ultimos %d: %.0f %% (debe bajar de %d %%)",
+                     st.cycles, AUTOTUNE_MAX_CYCLES, el / 60, el % 60,
+                     AUTOTUNE_CYCLES, st.spread * 100.0f, (int)(AUTOTUNE_STEADY_TOL * 100.0f));
+        } else {
+            snprintf(prog, sizeof prog,
+                     "Ciclos: %d (necesita %d parejos, max. %d)     Tiempo %02u:%02u",
+                     st.cycles, AUTOTUNE_CYCLES, AUTOTUNE_MAX_CYCLES, el / 60, el % 60);
+        }
         snprintf(buf, sizeof buf,
-                 "%s\n\nT %.1f \xC2\xB0""C     SP %.0f \xC2\xB0""C     Resistencias %.0f %%\n"
-                 "Ciclos medidos %d de %d     Tiempo %02u:%02u",
+                 "%s\n\nT %.1f \xC2\xB0""C     SP %.0f \xC2\xB0""C     Resistencias %.0f %%\n%s",
                  st.state == AUTOTUNE_HEATING ? "CALENTANDO HASTA EL SP..." : "MIDIENDO LA OSCILACION...",
-                 st.temp, st.sp, st.duty * 100.0f, st.cycles, AUTOTUNE_CYCLES, el / 60, el % 60);
+                 st.temp, st.sp, st.duty * 100.0f, prog);
         lv_obj_set_style_text_color(s_info_lbl, UI_COL_CYAN, 0);
         lv_label_set_text(s_info_lbl, buf);
         break;
@@ -100,14 +118,15 @@ static void refresh(void)
         if (msg_active()) return;
         snprintf(buf, sizeof buf,
                  "AUTOTUNE TERMINADO\n\nNuevo:  Kp %.3f   Ki %.5f   Kd %.2f\n"
-                 "(Ku %.3f, periodo %.0f s)\n\nACEPTAR guarda estas ganancias en el equipo.",
-                 st.kp, st.ki, st.kd, st.ku, st.pu);
+                 "(Ku %.3f, periodo %.0f s)\n\nACEPTAR guarda estas ganancias en el equipo.%s",
+                 st.kp, st.ki, st.kd, st.ku, st.pu, cool);
         lv_obj_set_style_text_color(s_info_lbl, UI_COL_GREEN, 0);
         lv_label_set_text(s_info_lbl, buf);
         break;
 
     case AUTOTUNE_ABORTED:
-        snprintf(buf, sizeof buf, "AUTOTUNE CANCELADO\n\n%s\n\nNo se cambiaron las ganancias.", st.reason);
+        snprintf(buf, sizeof buf, "AUTOTUNE CANCELADO\n\n%s\n\nNo se cambiaron las ganancias.%s",
+                 st.reason, cool);
         lv_obj_set_style_text_color(s_info_lbl, UI_COL_RED, 0);
         lv_label_set_text(s_info_lbl, buf);
         break;

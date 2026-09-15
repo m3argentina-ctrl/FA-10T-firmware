@@ -292,6 +292,7 @@
 #define AUTOTUNE_HYST_C              0.3f     // histéresis del relé
 #define AUTOTUNE_MIN_PHASE_S         10.0f    // tiempo mínimo en ON u OFF (anti-rebote)
 #define AUTOTUNE_CYCLES              4        // ciclos estables que se promedian
+#define AUTOTUNE_STEADY_TOL          0.25f    // esos ciclos deben diferir menos de 25 % (Ku y período)
 #define AUTOTUNE_MAX_CYCLES          10
 #define AUTOTUNE_TIMEOUT_S           5400.0f  // 90 min
 #define AUTOTUNE_MAX_OVER_C          10.0f    // aborta si T > SP + esto
