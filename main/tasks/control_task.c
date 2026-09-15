@@ -1,5 +1,7 @@
 #include "control_task.h"
 
+#include <math.h>
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -17,6 +19,7 @@
 #include "humidity_autostop.h"
 #include "cooldown.h"
 #include "extractor.h"
+#include "autotune.h"
 
 static const char *TAG = "control_task";
 
@@ -36,7 +39,8 @@ static void apply_gains(pid_t *pid, const fa10t_config_t *cfg, float sp)
         .out_max = 1.0f,
         .d_filter_alpha = 0.85f,
         .derivative_on_measurement = true,
-        .kt = cfg->ki,
+        // Con el Ki chico del autotune, kt=Ki no frena el windup (+9 °C simulado): integración condicional.
+        .kt = autotune_is_tuned() ? 0.0f : cfg->ki,
     };
     pid_set_params(pid, &p);
     pid_set_setpoint(pid, sp);
@@ -71,9 +75,8 @@ static void control_task(void *arg)
     while (1) {
         sensor_sample_t sample;
         if (xQueueReceive(q, &sample, pdMS_TO_TICKS(CONTROL_TASK_PERIOD_MS + 50)) != pdTRUE) {
-            sample.fault        = true;
-            sample.temperature  = 0.0f;
-            sample.timestamp_us = esp_timer_get_time();
+            sample = (sensor_sample_t){ .fault = true, .heater_temperature = NAN,
+                                        .timestamp_us = esp_timer_get_time() };
         }
 
         uint64_t now_us = esp_timer_get_time();
@@ -89,7 +92,9 @@ static void control_task(void *arg)
         bool  fan_relay_stuck;
         float rh;
         bool  rh_fault;
+        op_mode_t op_mode;
         app_state_lock();
+        op_mode         = app_state_get()->op_mode;
         sp_eff          = app_state_get()->effective_setpoint;
         fan_on          = app_state_get()->fan_command_on;
         fan_fault       = app_state_get()->fan_fault;
@@ -106,17 +111,29 @@ static void control_task(void *arg)
 
         apply_gains(&pid, &cfg, sp_eff);
 
+        // Autotune (sólo en reposo): maneja las resistencias con el relé en vez del PID.
+        const float at_out  = autotune_step(sample.temperature, sample.fault,
+                                            op_mode != OP_MODE_IDLE, dt);
+        const bool  at_run  = autotune_is_running();
+        const bool  at_fans = autotune_fans_on();
+
         float out;
-        if (sample.fault || !now_active) {
+        if (at_run) {
+            pid_reset(&pid);
+            out = at_out;
+        } else if (sample.fault || !now_active) {
             pid_reset(&pid);
             out = 0.0f;
         } else {
             out = pid_compute(&pid, sample.temperature, dt);
         }
+        const bool heating = now_active || at_run;
 
         uint32_t faults = safety_evaluate(sample.temperature, sample.limit_temperature,
                                           out, dt, sample.fault, fan_fault,
-                                          fan_relay_stuck);
+                                          fan_relay_stuck,
+                                          sample.heater_temperature,
+                                          sample.heater_fault && heating);
 
         if (safety_consume_recovery_event()) {
             pid_reset(&pid);
@@ -124,10 +141,11 @@ static void control_task(void *arg)
         }
 
         const bool tripped = (faults & SAFETY_TRIP_MASK) != 0;
+        if (tripped && at_run) autotune_cancel("ALARMA DE SEGURIDAD");
         if (!tripped) {
             const float ramp = safety_recovery_factor();
-            ssr3ch_set_duty(SSR_CH_DRV, now_active ? out * ramp : 0.0f);
-            ssr3ch_set_duty(SSR_CH_FAN, fan_on     ? 1.0f       : 0.0f);
+            ssr3ch_set_duty(SSR_CH_DRV, heating ? out * ramp : 0.0f);
+            ssr3ch_set_duty(SSR_CH_FAN, (fan_on || at_fans) ? 1.0f : 0.0f);
             // AUX = extractor por humedad (histéresis + anti-cycling + fail-safe).
             ssr3ch_set_duty(SSR_CH_AUX, extractor_tick(rh, rh_fault, now_active, dt));
         }
@@ -168,6 +186,7 @@ static void control_task(void *arg)
         recovery_tick(dt);
 
         // Publish duty mirror + clear running flag when tripped.
+        bool session_aborted = false;
         app_state_lock();
         app_state_t *st = app_state_get();
         st->pid_output    = out;
@@ -176,12 +195,24 @@ static void control_task(void *arg)
         st->ssr_aux_duty  = ssr3ch_get_duty(SSR_CH_AUX);
         st->safety_faults = faults;
         st->setpoint      = sp_eff;
-        st->running       = !tripped && now_active;
+        st->running       = !tripped && heating;
         if (tripped && st->run_state != RUN_STATE_ALARM) {
+            // Una alarma cancela la sesión en curso: no se retoma al reconocerla.
+            // Si quedara viva, al confirmar la alarma el SP seguiría activo y las
+            // resistencias volverían a calentar sin reloj y sin botón DETENER.
+            if (st->op_mode != OP_MODE_IDLE) {
+                session_aborted = (st->run_state == RUN_STATE_RUNNING ||
+                                   st->run_state == RUN_STATE_PAUSED);
+                st->op_mode             = OP_MODE_IDLE;
+                st->effective_setpoint  = 0.0f;
+                st->fan_command_on      = false;
+                st->cooling_active      = false;
+                st->session_remaining_s = 0;
+            }
             st->run_state = RUN_STATE_ALARM;
         } else if (!tripped && st->run_state == RUN_STATE_ALARM &&
                    st->op_mode == OP_MODE_IDLE) {
-            // Alarma disparada en reposo: no hay sesión cuyo stop la saque de ALARM.
+            // Alarma reconocida (o falla que se normalizó sola): vuelve a reposo.
             st->run_state = RUN_STATE_IDLE;
         }
         // Integrar consumo SOLO mientras la sesión corre (incluye calentamiento).
@@ -192,6 +223,7 @@ static void control_task(void *arg)
             if (st->ssr_fan_duty > 0.5f) st->session_fan_on_s += dt;
         }
         app_state_unlock();
+        if (session_aborted) telemetry_note_session_end(false);   // lote interrumpido por alarma
 
         safety_wdt_feed();
     }

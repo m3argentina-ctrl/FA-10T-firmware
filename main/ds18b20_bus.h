@@ -19,15 +19,26 @@ typedef enum {
 } ds18b20_fault_t;
 
 typedef struct {
-    float    temperature_c;     // °C = PROMEDIO de las sondas válidas (arriba/abajo) → PID
-    float    max_temperature_c; // °C = la sonda MÁS CALIENTE → seguridad (OVERTEMP aire)
-    bool     fault;             // true solo si fallan TODAS las sondas
-    uint8_t  fault_status;      // ds18b20_fault_t bitmask
-    int      sensor_count;      // sondas detectadas en el bus (multidrop)
+    float    temperature_c;       // °C = PROMEDIO de las sondas de AIRE válidas → PID
+    float    max_temperature_c;   // °C = la sonda de AIRE más caliente → seguridad (OVERTEMP aire)
+    bool     fault;               // true solo si fallan TODAS las sondas de aire
+    uint8_t  fault_status;        // ds18b20_fault_t bitmask
+    int      sensor_count;        // sondas detectadas en el bus (multidrop)
+    bool     heater_assigned;     // hay una ROM asignada como sonda de resistencias
+    bool     heater_valid;        // esa sonda está en el bus y su última lectura es válida
+    float    heater_temperature_c;
 } ds18b20_reading_t;
 
+// Estado de cada sonda del bus (pantalla SONDAS y /api/diag).
+typedef struct {
+    uint64_t rom;
+    float    temperature_c;
+    bool     valid;
+    bool     is_heater;
+} ds18b20_probe_t;
+
 // Inicializa el bus 1-Wire (GPIO PIN_ONEWIRE), escanea las sondas y fija la
-// resolución. La sonda de control es la primera detectada (índice 0).
+// resolución. Las sondas nuevas se detectan sólo al arrancar.
 esp_err_t ds18b20_bus_init(void);
 
 // Lectura NO bloqueante. Internamente dispara la conversión y la lee ~750 ms
@@ -42,6 +53,12 @@ esp_err_t ds18b20_bus_read(ds18b20_reading_t *out);
 // usa el 1-Wire → las lecturas fallan y dispara SENSOR_FAULT en falso.
 // Mientras está en pausa se conserva la última lectura válida (sin fault).
 void ds18b20_bus_set_paused(bool paused);
+
+// Sonda de resistencias: se identifica por ROM y NO entra al promedio del PID.
+// 0 = todas las sondas son de aire. Se puede llamar antes de ds18b20_bus_init().
+void     ds18b20_bus_set_heater_rom(uint64_t rom);
+uint64_t ds18b20_bus_get_heater_rom(void);
+int      ds18b20_bus_get_probes(ds18b20_probe_t *out, int max);   // devuelve cuántas copió
 
 #ifdef __cplusplus
 }

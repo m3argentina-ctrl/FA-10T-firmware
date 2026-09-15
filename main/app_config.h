@@ -93,7 +93,7 @@
 // Si una falla, se sigue con la otra; solo si fallan las dos → SENSOR_FAULT.
 #define PIN_ONEWIRE                  40      // GPIO40 = H1 pin 5 (1-Wire DQ)
 #define DS18B20_RESOLUTION_BITS      12      // 12 bits = 0.0625 °C (~750 ms conv)
-#define DS18B20_MAX_SENSORS          4       // en este modelo se usan 2 (multidrop)
+#define DS18B20_MAX_SENSORS          4       // 2 de aire + 1 opcional de resistencias (multidrop)
 #define DS18B20_FAULT_TMIN_C         (-20.0f)
 #define DS18B20_FAULT_TMAX_C         200.0f
 // El DS18B20 es DIGITAL: no tiene el ruido del ADC del PT1000, así que el
@@ -278,6 +278,23 @@
 #define SAFETY_WDT_TIMEOUT_S         5
 #define SAFETY_HYSTERESIS_C          5.0f
 #define SAFETY_RECOVERY_RAMP_S       8.0f
+
+// Sonda de resistencias (3ª DS18B20 en J5, asignada por ROM en AREA TECNICA → SONDAS).
+// Corta y alarma sobre este límite; el termostato mecánico de 95 °C (misma zona) es el respaldo.
+#define HEATER_LIMIT_TEMP_C          90.0f
+#define HEATER_PROBE_FAULT_DEBOUNCE_N 100     // ciclos de sensor_task (100 ms) sin lectura = 10 s
+
+// Autotune del PID: relé con sesgo + reglas de Tyreus-Luyben (AREA TECNICA → AUTOTUNE).
+#define AUTOTUNE_SP_DEFAULT_C        60.0f
+#define AUTOTUNE_SP_MIN_C            40.0f
+#define AUTOTUNE_SP_MAX_C            75.0f
+#define AUTOTUNE_SP_STEP_C           5.0f
+#define AUTOTUNE_HYST_C              0.3f     // histéresis del relé
+#define AUTOTUNE_MIN_PHASE_S         10.0f    // tiempo mínimo en ON u OFF (anti-rebote)
+#define AUTOTUNE_CYCLES              4        // ciclos estables que se promedian
+#define AUTOTUNE_MAX_CYCLES          10
+#define AUTOTUNE_TIMEOUT_S           5400.0f  // 90 min
+#define AUTOTUNE_MAX_OVER_C          10.0f    // aborta si T > SP + esto
 
 // --- Reset / acknowledge button --------------------------------------------
 #define PIN_BTN_RESET                0      // ESP32-S3 BOOT button

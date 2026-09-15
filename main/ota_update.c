@@ -6,20 +6,30 @@
 #include "esp_ota_ops.h"
 #include "esp_app_format.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 #include "app_state.h"
 #include "ssr3ch.h"
 #include "ds18b20_bus.h"
+#include "autotune.h"
 
 static const char *TAG = "ota";
+
+// La OTA exige el PIN de servicio en el header X-Pin: sin esto cualquiera en la red
+// del cliente podía subir un firmware. Tras OTA_PIN_MAX_FAILS PIN incorrectos seguidos
+// la OTA queda bloqueada OTA_PIN_LOCKOUT_S (frena la fuerza bruta del PIN de 4 dígitos).
+#define OTA_PIN_MAX_FAILS   5
+#define OTA_PIN_LOCKOUT_S   (15 * 60)
 
 // Buffer de recepción. Estático a propósito: el stack del httpd es de 5 KB y no
 // entra un buffer de 4 KB. Sólo se permite una actualización a la vez
 // (s_in_progress), así que no hay reentrada.
 static uint8_t s_buf[4096];
 static bool    s_in_progress;
+static int     s_pin_fails;
+static int64_t s_locked_until_us;
 
 esp_err_t ota_update_mark_valid(void)
 {
@@ -45,7 +55,7 @@ static const char UPDATE_PAGE[] =
 "<title>Actualizar firmware</title><style>"
 "body{font-family:system-ui,sans-serif;background:#111;color:#eee;margin:0;padding:20px}"
 "h1{color:#E87A20;font-size:20px}.c{max-width:520px;margin:auto}"
-"input[type=file]{width:100%;padding:10px;background:#222;color:#eee;border:1px solid #444;border-radius:6px}"
+"input{width:100%;box-sizing:border-box;padding:10px;background:#222;color:#eee;border:1px solid #444;border-radius:6px}"
 "button{width:100%;padding:14px;margin-top:14px;background:#E87A20;color:#fff;border:0;"
 "border-radius:6px;font-size:16px;font-weight:bold}button:disabled{background:#555}"
 "p{color:#aaa;font-size:14px;line-height:1.5}.w{background:#3a2a00;border-left:4px solid #E8A020;padding:10px;border-radius:4px}"
@@ -53,14 +63,17 @@ static const char UPDATE_PAGE[] =
 "<h1>Actualizar firmware</h1>"
 "<div class=w><b>Antes de actualizar:</b> el equipo NO debe tener un proceso en marcha. "
 "Al terminar se reinicia solo. No cortes la alimentacion durante la carga.</div>"
-"<form id=f><p>Archivo <code>.bin</code> del firmware:</p>"
+"<form id=f><p>PIN de servicio:</p>"
+"<input type=password id=pin inputmode=numeric maxlength=4 autocomplete=off required>"
+"<p>Archivo <code>.bin</code> del firmware:</p>"
 "<input type=file id=fw accept='.bin' required>"
 "<button type=submit id=b>SUBIR Y ACTUALIZAR</button></form><div id=s></div>"
 "<script>"
 "const f=document.getElementById('f'),b=document.getElementById('b'),s=document.getElementById('s');"
 "f.onsubmit=async e=>{e.preventDefault();const fl=document.getElementById('fw').files[0];"
 "if(!fl)return;b.disabled=true;s.textContent='Subiendo '+(fl.size/1024|0)+' KB...';"
-"try{const r=await fetch('/update',{method:'POST',body:fl});const t=await r.text();"
+"try{const r=await fetch('/update',{method:'POST',"
+"headers:{'X-Pin':document.getElementById('pin').value},body:fl});const t=await r.text();"
 "s.textContent=t;if(r.ok){s.textContent='OK. Reiniciando... volve a cargar la pagina en ~20 s.';}"
 "else{b.disabled=false;}}catch(err){s.textContent='Error de red: '+err;b.disabled=false;}};"
 "</script></div></body></html>";
@@ -88,13 +101,13 @@ static void drain_body(httpd_req_t *req)
     }
 }
 
-static esp_err_t fail(httpd_req_t *req, const char *msg)
+static esp_err_t fail_status(httpd_req_t *req, const char *status, const char *msg)
 {
     ESP_LOGE(TAG, "actualizacion abortada: %s", msg);
     s_in_progress = false;
     ds18b20_bus_set_paused(false);   // vuelve a leer sensores
     drain_body(req);                  // primero consumir, después responder
-    httpd_resp_set_status(req, "400 Bad Request");
+    httpd_resp_set_status(req, status);
     httpd_resp_set_type(req, "text/plain; charset=utf-8");
     httpd_resp_sendstr(req, msg);
     // ESP_OK (no ESP_FAIL): devolver ESP_FAIL hace que httpd cierre el socket
@@ -102,9 +115,40 @@ static esp_err_t fail(httpd_req_t *req, const char *msg)
     return ESP_OK;
 }
 
+static esp_err_t fail(httpd_req_t *req, const char *msg)
+{
+    return fail_status(req, "400 Bad Request", msg);
+}
+
+// PIN de servicio en el header X-Pin. Se valida antes de leer el cuerpo.
+static bool pin_ok(httpd_req_t *req)
+{
+    char pin[PIN_LEN_MAX + 2] = "";
+    if (httpd_req_get_hdr_value_str(req, "X-Pin", pin, sizeof pin) != ESP_OK) return false;
+    app_state_lock();
+    const bool ok = (strcmp(pin, app_state_get()->pin_servicio) == 0);
+    app_state_unlock();
+    return ok;
+}
+
 static esp_err_t update_post_handler(httpd_req_t *req)
 {
     if (s_in_progress) return fail(req, "Ya hay una actualizacion en curso.");
+
+    const int64_t now = esp_timer_get_time();
+    if (now < s_locked_until_us) {
+        return fail_status(req, "403 Forbidden",
+                           "Demasiados intentos con PIN incorrecto. Espera 15 minutos.");
+    }
+    if (!pin_ok(req)) {
+        if (++s_pin_fails >= OTA_PIN_MAX_FAILS) {
+            s_pin_fails = 0;
+            s_locked_until_us = now + (int64_t)OTA_PIN_LOCKOUT_S * 1000000;
+            ESP_LOGW(TAG, "OTA bloqueada %d min por PIN incorrecto", OTA_PIN_LOCKOUT_S / 60);
+        }
+        return fail_status(req, "403 Forbidden", "PIN de servicio incorrecto.");
+    }
+    s_pin_fails = 0;
 
     // SEGURIDAD: nunca actualizar con un proceso corriendo. La actualización
     // termina en reinicio, y reiniciar en mitad de un ciclo dejaría el
@@ -114,6 +158,9 @@ static esp_err_t update_post_handler(httpd_req_t *req)
     app_state_unlock();
     if (rs == RUN_STATE_RUNNING || rs == RUN_STATE_PAUSED) {
         return fail(req, "Hay un proceso en marcha. Detenelo antes de actualizar.");
+    }
+    if (autotune_is_running()) {
+        return fail(req, "Hay un autotune en marcha. Cancelalo antes de actualizar.");
     }
 
     if (req->content_len <= 0) return fail(req, "Archivo vacio.");

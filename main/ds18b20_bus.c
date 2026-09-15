@@ -15,6 +15,7 @@ static const char *TAG = "ds18b20";
 
 static onewire_bus_handle_t     s_bus;
 static ds18b20_device_handle_t  s_devices[DS18B20_MAX_SENSORS];
+static uint64_t                 s_roms[DS18B20_MAX_SENSORS];
 static int                      s_dev_count;
 static bool                     s_inited;
 static volatile bool            s_paused;   // ver ds18b20_bus_set_paused()
@@ -28,7 +29,9 @@ static volatile bool            s_paused;   // ver ds18b20_bus_set_paused()
 // Solución: la conversión+lectura corre en esta tarea de baja prioridad, y
 // ds18b20_bus_read() sólo devuelve la última copia (retorna al instante).
 // La térmica del horno es de minutos, así que ~1 Hz de refresco sobra.
-static ds18b20_reading_t  s_last;      // protegido por s_mtx
+static ds18b20_reading_t  s_last;                              // protegido por s_mtx
+static ds18b20_probe_t    s_probes[DS18B20_MAX_SENSORS];       // protegido por s_mtx
+static uint64_t           s_heater_rom;                        // protegido por s_mtx (64 bits no es atómico)
 static SemaphoreHandle_t  s_mtx;
 
 #define DS18B20_TASK_STACK   3584
@@ -36,7 +39,16 @@ static SemaphoreHandle_t  s_mtx;
 #define DS18B20_TASK_CORE    1
 
 static void ds18b20_task(void *arg);
-static void read_all(ds18b20_reading_t *out);
+static void read_all(ds18b20_reading_t *out, ds18b20_probe_t *probes);
+
+static uint64_t heater_rom_get(void)
+{
+    if (!s_mtx) return s_heater_rom;
+    xSemaphoreTake(s_mtx, portMAX_DELAY);
+    uint64_t rom = s_heater_rom;
+    xSemaphoreGive(s_mtx);
+    return rom;
+}
 
 #if SENSORS_FAKE
 // Planta térmica simulada de primer orden (portada del viejo pt1000_adc.c):
@@ -49,7 +61,7 @@ static void read_all(ds18b20_reading_t *out);
 static float    s_sim_temp = 25.0f;
 static uint64_t s_sim_last_us;
 
-static void sim_step(ds18b20_reading_t *out)
+static void sim_step(ds18b20_reading_t *out, ds18b20_probe_t *probes)
 {
     extern float app_setpoint_for_sim(void);
     extern float app_drv_duty_for_sim(void);
@@ -68,6 +80,10 @@ static void sim_step(ds18b20_reading_t *out)
     out->sensor_count     = 2;
     out->temperature_c    = s_sim_temp;
     out->max_temperature_c = s_sim_temp;
+    for (int i = 0; i < 2; ++i) {
+        probes[i] = (ds18b20_probe_t){ .rom = s_roms[i], .temperature_c = s_sim_temp,
+                                       .valid = true, .is_heater = false };
+    }
 }
 #endif
 
@@ -90,6 +106,8 @@ esp_err_t ds18b20_bus_init(void)
     s_sim_temp    = 25.0f;
     s_sim_last_us = esp_timer_get_time();
     s_dev_count   = 2;              // simula las 2 sondas del equipo
+    s_roms[0]     = 0x00000000000A0128ULL;
+    s_roms[1]     = 0x00000000000B0128ULL;
     ESP_LOGI(TAG, "DS18B20 init [SENSORS_FAKE] — sin bus 1-Wire");
 #else
     onewire_bus_config_t bus_cfg = {
@@ -106,6 +124,7 @@ esp_err_t ds18b20_bus_init(void)
     }
 
     // Escaneo del bus (multidrop).
+    const uint64_t heater = s_heater_rom;   // s_mtx todavía no existe: no hay concurrencia
     s_dev_count = 0;
     onewire_device_iter_handle_t iter = NULL;
     onewire_device_t dev;
@@ -117,8 +136,10 @@ esp_err_t ds18b20_bus_init(void)
             if (ds18b20_new_device(&dev, &ds_cfg, &h) == ESP_OK) {
                 ds18b20_set_resolution(h, resolution_enum());
                 s_devices[s_dev_count] = h;
-                ESP_LOGI(TAG, "DS18B20[%d] ROM=0x%016llX", s_dev_count,
-                         (unsigned long long)dev.address);
+                s_roms[s_dev_count]    = dev.address;
+                ESP_LOGI(TAG, "DS18B20[%d] ROM=0x%016llX%s", s_dev_count,
+                         (unsigned long long)dev.address,
+                         (heater != 0 && dev.address == heater) ? " (RESISTENCIAS)" : "");
                 s_dev_count++;
             } else {
                 ESP_LOGW(TAG, "dispositivo 1-Wire no-DS18B20 ignorado (ROM=0x%016llX)",
@@ -129,9 +150,16 @@ esp_err_t ds18b20_bus_init(void)
     }
 
     ESP_LOGI(TAG, "DS18B20 detectados: %d", s_dev_count);
+    if (heater != 0) {
+        bool found = false;
+        for (int i = 0; i < s_dev_count; ++i) found |= (s_roms[i] == heater);
+        if (!found) ESP_LOGE(TAG, "sonda de resistencias asignada (ROM=0x%016llX) NO está en el bus",
+                             (unsigned long long)heater);
+    }
 #endif  // SENSORS_FAKE
 
     memset(&s_last, 0, sizeof(s_last));
+    memset(s_probes, 0, sizeof(s_probes));
     s_last.sensor_count = s_dev_count;
     // Arranca en fault hasta que la tarea publique la primera lectura válida:
     // así el equipo no cree que está a 0 °C durante el primer segundo.
@@ -154,7 +182,7 @@ esp_err_t ds18b20_bus_init(void)
         // equipo queda en RUN_STATE_ALARM apenas bootea (falsa alarma).
         // Cuesta ~1,6 s de boot y evita ese arranque en alarma.
 #if !SENSORS_FAKE
-        read_all(&s_last);
+        read_all(&s_last, s_probes);
         ESP_LOGI(TAG, "primera lectura: T=%.2f max=%.2f fault=%d",
                  (double)s_last.temperature_c, (double)s_last.max_temperature_c,
                  (int)s_last.fault);
@@ -166,15 +194,17 @@ esp_err_t ds18b20_bus_init(void)
     return ESP_OK;
 }
 
-// Lee TODAS las sondas (modelo 2 sondas arriba/abajo):
-//   temperature_c     = PROMEDIO de las sondas VÁLIDAS  -> alimenta el PID.
-//   max_temperature_c = la MÁS CALIENTE                 -> la usa la seguridad.
-// Si una sonda falla se sigue con las buenas; solo si fallan TODAS -> fault
+// Lee TODAS las sondas. La de resistencias (por ROM) va aparte; con las de AIRE:
+//   temperature_c     = PROMEDIO de las válidas -> alimenta el PID.
+//   max_temperature_c = la MÁS CALIENTE         -> la usa la seguridad.
+// Si una sonda de aire falla se sigue con las buenas; solo si fallan TODAS -> fault
 // (fail-safe: no parar el equipo por una sola sonda muerta).
-static void read_all(ds18b20_reading_t *out)
+static void read_all(ds18b20_reading_t *out, ds18b20_probe_t *probes)
 {
+    const uint64_t heater = heater_rom_get();
     memset(out, 0, sizeof(*out));
-    out->sensor_count = s_dev_count;
+    out->sensor_count    = s_dev_count;
+    out->heater_assigned = (heater != 0);
 
     if (s_dev_count == 0) {
         out->fault        = true;
@@ -194,13 +224,20 @@ static void read_all(ds18b20_reading_t *out)
         if (err == ESP_OK) {
             err = ds18b20_get_temperature(s_devices[i], &t);
         }
-        bool valid = (err == ESP_OK) &&
-                     (t >= DS18B20_FAULT_TMIN_C) && (t <= DS18B20_FAULT_TMAX_C);
-        if (valid) {
-            if (n_valid == 0 || t > max_t) max_t = t;
-            sum += t;
-            n_valid++;
+        const bool valid = (err == ESP_OK) &&
+                           (t >= DS18B20_FAULT_TMIN_C) && (t <= DS18B20_FAULT_TMAX_C);
+        const bool is_heater = (heater != 0) && (s_roms[i] == heater);
+        probes[i] = (ds18b20_probe_t){ .rom = s_roms[i], .temperature_c = t,
+                                       .valid = valid, .is_heater = is_heater };
+        if (!valid) continue;
+        if (is_heater) {
+            out->heater_valid         = true;
+            out->heater_temperature_c = t;
+            continue;
         }
+        if (n_valid == 0 || t > max_t) max_t = t;
+        sum += t;
+        n_valid++;
     }
 
     if (n_valid == 0) {
@@ -219,6 +256,7 @@ static void ds18b20_task(void *arg)
 {
     (void)arg;
     ds18b20_reading_t r;
+    ds18b20_probe_t   p[DS18B20_MAX_SENSORS];
     while (1) {
         // En pausa (p. ej. durante una actualización OTA) no se toca el bus:
         // se conserva la última lectura buena y no se generan fallas falsas.
@@ -226,16 +264,18 @@ static void ds18b20_task(void *arg)
             vTaskDelay(pdMS_TO_TICKS(200));
             continue;
         }
+        memset(p, 0, sizeof(p));
 #if SENSORS_FAKE
-        sim_step(&r);
+        sim_step(&r, p);
         vTaskDelay(pdMS_TO_TICKS(200));
 #else
-        read_all(&r);                       // bloqueante: ~0,8 s por sonda
+        read_all(&r, p);                    // bloqueante: ~0,8 s por sonda
         vTaskDelay(pdMS_TO_TICKS(50));      // respiro entre ciclos
 #endif
         if (s_paused) continue;             // pausó durante la conversión
         xSemaphoreTake(s_mtx, portMAX_DELAY);
         s_last = r;
+        memcpy(s_probes, p, sizeof(s_probes));
         xSemaphoreGive(s_mtx);
     }
 }
@@ -255,4 +295,31 @@ esp_err_t ds18b20_bus_read(ds18b20_reading_t *out)
     *out = s_last;
     xSemaphoreGive(s_mtx);
     return ESP_OK;
+}
+
+void ds18b20_bus_set_heater_rom(uint64_t rom)
+{
+    if (s_mtx) xSemaphoreTake(s_mtx, portMAX_DELAY);
+    s_heater_rom = rom;
+    for (int i = 0; i < s_dev_count; ++i) {
+        s_probes[i].is_heater = (rom != 0) && (s_probes[i].rom == rom);
+    }
+    if (s_mtx) xSemaphoreGive(s_mtx);
+    ESP_LOGW(TAG, "sonda de resistencias: %s (ROM=0x%016llX)",
+             rom ? "asignada" : "sin asignar", (unsigned long long)rom);
+}
+
+uint64_t ds18b20_bus_get_heater_rom(void)
+{
+    return heater_rom_get();
+}
+
+int ds18b20_bus_get_probes(ds18b20_probe_t *out, int max)
+{
+    if (!out || max <= 0 || !s_mtx) return 0;
+    xSemaphoreTake(s_mtx, portMAX_DELAY);
+    const int n = (s_dev_count < max) ? s_dev_count : max;
+    memcpy(out, s_probes, (size_t)n * sizeof(*out));
+    xSemaphoreGive(s_mtx);
+    return n;
 }

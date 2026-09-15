@@ -4,6 +4,7 @@
 #include "safety.h"
 #include "ssr3ch.h"
 
+#include <math.h>
 #include <stdio.h>
 
 static lv_obj_t *s_fault_lbl;
@@ -15,6 +16,8 @@ static lv_obj_t *s_sess_lbl;
 static const char *fault_name(uint32_t mask)
 {
     if (mask & SAFETY_OVERTEMP)     return "SOBRETEMPERATURA";
+    if (mask & SAFETY_HEATER_OVERTEMP)    return "SOBRETEMP. RESIST.";
+    if (mask & SAFETY_HEATER_PROBE_FAULT) return "FALLA SONDA RESIST.";
     if (mask & SAFETY_RUNAWAY)      return "RUNAWAY TERMICO";
     if (mask & SAFETY_FAN_FAULT)       return "FALLA DE TURBINA";
     if (mask & SAFETY_FAN_RELAY_STUCK) return "RELE FAN PEGADO";
@@ -50,7 +53,14 @@ static void refresh_cb(lv_event_t *e)
     snprintf(buf, sizeof(buf), "I = %.3f A   /   NOM %.3f A", s.fan_current, s.fan_nominal);
     lv_label_set_text(s_curr_lbl, buf);
 #else
-    lv_label_set_text(s_curr_lbl, "SIN SENSOR DE CORRIENTE");
+    if (!s.last_sample.heater_assigned)
+        snprintf(buf, sizeof(buf), "T MAX AIRE %.1f C", s.last_sample.limit_temperature);
+    else if (isnan(s.last_sample.heater_temperature))
+        snprintf(buf, sizeof(buf), "SONDA RESIST. SIN LECTURA");
+    else
+        snprintf(buf, sizeof(buf), "T RESIST. %.1f C  (LIM %d)",
+                 s.last_sample.heater_temperature, (int)HEATER_LIMIT_TEMP_C);
+    lv_label_set_text(s_curr_lbl, buf);
 #endif
     snprintf(buf, sizeof(buf), "TEMP %.1f C", s.last_sample.temperature);
     lv_label_set_text(s_temp_lbl, buf);

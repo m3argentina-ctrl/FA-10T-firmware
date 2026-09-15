@@ -22,10 +22,12 @@ extern "C" {
 #define MODULOS_MAX           16     // tope de módulos turbina+resistencia (línea comercial)
 
 typedef struct {
-    float    temperature;       // °C, after calibration (sonda de control → PID)
+    float    temperature;       // °C, after calibration (promedio de las sondas de aire → PID)
     float    raw_temperature;   // °C, pre-calibration
-    float    limit_temperature; // °C, máx del bus 1-Wire (sonda junto a las
-                                // resistencias) → límite de seguridad de 90 °C
+    float    limit_temperature; // °C, la sonda de AIRE más caliente → SAFETY_LIMIT_TEMP_C
+    float    heater_temperature;// °C, sonda de resistencias; NAN = sin lectura o sin asignar
+    bool     heater_assigned;
+    bool     heater_fault;      // asignada y sin lectura válida sostenida (debounce)
     bool     fault;
     uint8_t  fault_status;
     uint64_t timestamp_us;

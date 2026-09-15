@@ -7,7 +7,11 @@
 #include "nvs_config.h"
 #include "display.h"
 #include "ssr3ch.h"
+#include "autotune.h"
+#include "autotune_ui.h"
+#include "sondas_ui.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -63,18 +67,18 @@ static void update_cb(lv_timer_t *t)
 
     fa10t_config_t cfg;
     app_state_copy_config(&cfg);
-    snprintf(buf, sizeof(buf), "%.1f/%.2f", cfg.kp, cfg.ki);
+    snprintf(buf, sizeof(buf), "%.3g %s", cfg.kp, autotune_is_tuned() ? "AT" : "FAB");
     lv_label_set_text(s_box_pid, buf);
 
-#if ACS712_ENABLED
     app_state_lock();
-    float fan_nom = app_state_get()->fan_nominal;
+    const bool  h_asg = app_state_get()->last_sample.heater_assigned;
+    const float h_t   = app_state_get()->last_sample.heater_temperature;
     app_state_unlock();
-    snprintf(buf, sizeof(buf), "%.3f A", fan_nom);
+    if (!h_asg)          snprintf(buf, sizeof(buf), "--");
+    else if (isnan(h_t)) snprintf(buf, sizeof(buf), "FALLA");
+    else                 snprintf(buf, sizeof(buf), "%.1f \xC2\xB0""C", h_t);
     lv_label_set_text(s_box_curr, buf);
-#else
-    lv_label_set_text(s_box_curr, "--");   // PCB v3 sin sensor de corriente
-#endif
+    lv_obj_set_style_text_color(s_box_curr, (h_asg && isnan(h_t)) ? UI_COL_RED : UI_COL_CYAN, 0);
 
     snprintf(buf, sizeof(buf), "%.1f \xC2\xB0""C", snap.t_max_historica);
     lv_label_set_text(s_box_tmax, buf);
@@ -242,6 +246,20 @@ static void on_screen_load_cb(lv_event_t *e)
     (void)e;
     if (!s_authenticated) lv_obj_clear_flag(s_pin_modal, LV_OBJ_FLAG_HIDDEN);
     else                  lv_obj_add_flag(s_pin_modal, LV_OBJ_FLAG_HIDDEN);
+}
+
+// Salir de la pantalla por cualquier camino (SALIR, menú izquierdo, alarma,
+// comando remoto) cierra la sesión: el próximo ingreso vuelve a pedir PIN. Se
+// borra el PIN tipeado (si no, los dígitos viejos quedan aunque el password mode
+// lo muestre vacío, y un "OK" rápido revalidaría sin retipear) y se ocultan las
+// confirmaciones de RESET, que se dibujan por encima del modal de PIN.
+static void on_screen_unload_cb(lv_event_t *e)
+{
+    (void)e;
+    s_authenticated = false;
+    lv_textarea_set_text(s_pin_ta, "");
+    lv_obj_add_flag(s_confirm_modal, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_reset_modal, LV_OBJ_FLAG_HIDDEN);
 }
 
 // --- Action buttons ---------------------------------------------------------
@@ -512,15 +530,13 @@ static void mod_edit_cb(lv_event_t *e)
                       UI_KB_MODE_NUMERIC, mod_kb_done, NULL);
 }
 
-// --- Salir de AREA TECNICA: logout + volver a INICIO ---
+static void sondas_cb(lv_event_t *e)   { (void)e; sondas_ui_show(); }
+static void autotune_cb(lv_event_t *e) { (void)e; autotune_ui_show(); }
+
+// --- Salir de AREA TECNICA: volver a INICIO (el logout lo hace on_screen_unload_cb) ---
 static void salir_cb(lv_event_t *e)
 {
     (void)e;
-    s_authenticated = false;       // próximo ingreso vuelve a pedir PIN
-    // Borrar el PIN tipeado: si no, al volver a entrar el modal muestra los
-    // dígitos viejos (visualmente vacío por el password mode pero igual ahí
-    // dentro). Limpiar evita que un "OK" rápido revalide sin retipear.
-    if (s_pin_ta) lv_textarea_set_text(s_pin_ta, "");
     ui_show_screen(UI_SCREEN_INICIO);
 }
 
@@ -600,8 +616,8 @@ void screen_tecnica_build(lv_obj_t *scr)
     small_box(p, "FALLA FAN",   UI_COL_RED,    268, 28, &s_box_fan);
 
     // Row 2 (y=74..116)
-    small_box(p, "Kp / Ki",     UI_COL_GREEN,  4,   74, &s_box_pid);
-    small_box(p, "I NOM",       UI_COL_GREEN,  92,  74, &s_box_curr);
+    small_box(p, "PID Kp",      UI_COL_GREEN,  4,   74, &s_box_pid);
+    small_box(p, "T RESIST",    UI_COL_ORANGE, 92,  74, &s_box_curr);
     small_box(p, "T MAX HIST",  UI_COL_ORANGE, 180, 74, &s_box_tmax);
     small_box(p, "SESIONES",    UI_COL_CYAN,   268, 74, &s_box_sess);
 
@@ -690,6 +706,24 @@ void screen_tecnica_build(lv_obj_t *scr)
     lv_obj_set_style_text_color(bpl, UI_COL_WHITE, 0);
     lv_obj_center(bpl);
 
+    // SONDAS y AUTOTUNE a los costados del brillo.
+    static const struct { const char *txt; uint32_t col_hex; lv_event_cb_t cb; lv_align_t al; int x; } side[] = {
+        { "SONDAS",   0x00838F, sondas_cb,   LV_ALIGN_TOP_LEFT,   4  },
+        { "AUTOTUNE", 0xE87A20, autotune_cb, LV_ALIGN_TOP_RIGHT, -4  },
+    };
+    for (int i = 0; i < 2; ++i) {
+        lv_obj_t *b = lv_btn_create(p);
+        lv_obj_set_size(b, 70, 28);
+        lv_obj_align(b, side[i].al, side[i].x, 242);
+        lv_obj_set_style_bg_color(b, lv_color_hex(side[i].col_hex), 0);
+        lv_obj_add_event_cb(b, side[i].cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_t *bl = lv_label_create(b);
+        lv_label_set_text(bl, side[i].txt);
+        lv_obj_set_style_text_font(bl, ui_font_sm(), 0);
+        lv_obj_set_style_text_color(bl, UI_COL_WHITE, 0);
+        lv_obj_center(bl);
+    }
+
     // Action buttons (bottom) — 4 botones: SALIR + 3 acciones (CALIBRAR se quitó
     // en la v3, ver nota arriba). Los 4 se reparten todo el ancho del panel:
     //   4 botones × 85 + 3 gaps × 4 = 352, con márgenes de 4 → 360 exactos.
@@ -719,5 +753,6 @@ void screen_tecnica_build(lv_obj_t *scr)
     build_confirm_modal(scr);   // overlay de confirmación del RESET SVC
     build_reset_modal(scr);     // overlay de confirmación del RESET TOTAL (encima de todo)
     lv_obj_add_event_cb(scr, on_screen_load_cb, LV_EVENT_SCREEN_LOAD_START, NULL);
+    lv_obj_add_event_cb(scr, on_screen_unload_cb, LV_EVENT_SCREEN_UNLOAD_START, NULL);
     lv_timer_create(update_cb, 1000, NULL);
 }

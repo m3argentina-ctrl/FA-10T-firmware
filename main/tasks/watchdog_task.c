@@ -8,6 +8,7 @@
 
 #include "app_config.h"
 #include "app_state.h"
+#include <math.h>
 #include "safety.h"
 #include "telemetry.h"
 #include "recovery.h"
@@ -123,7 +124,7 @@ static void watchdog_task(void *arg)
         if (last_ts != 0 && s_age_us > 1000ULL * 1000ULL) {
             ESP_LOGW(TAG, "sensor stream stale (%llu us)", (unsigned long long)s_age_us);
             // sensor stale → sensor_fault=true; límite en 0 (no aplica sin lectura).
-            safety_evaluate(0.0f, 0.0f, 0.0f, 0.0f, true, false, false);
+            safety_evaluate(0.0f, 0.0f, 0.0f, 0.0f, true, false, false, NAN, false);
         }
 
         if (faults & SAFETY_TRIP_MASK) {

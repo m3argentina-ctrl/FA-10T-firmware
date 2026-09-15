@@ -1,5 +1,7 @@
 #include "sensor_task.h"
 
+#include <math.h>
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -117,6 +119,18 @@ static void sensor_task(void *arg)
         fa10t_config_t cfg;
         app_state_copy_config(&cfg);
         sample.temperature = cfg.cal_gain * sample.raw_temperature + cfg.cal_offset;
+
+        // Sonda de resistencias: sin lectura válida sostenida → falla (safety corta si se pide calor).
+        static int s_heater_bad_run;
+        if (r.heater_assigned && !r.heater_valid) {
+            if (s_heater_bad_run < HEATER_PROBE_FAULT_DEBOUNCE_N) s_heater_bad_run++;
+        } else {
+            s_heater_bad_run = 0;
+        }
+        sample.heater_assigned    = r.heater_assigned;
+        sample.heater_temperature = r.heater_valid ? r.heater_temperature_c : NAN;
+        sample.heater_fault       = r.heater_assigned &&
+                                    (s_heater_bad_run >= HEATER_PROBE_FAULT_DEBOUNCE_N);
 
         xQueueOverwrite(q, &sample);
 

@@ -5,6 +5,7 @@
 #if WEB_SERVER_ENABLED
 
 #include <string.h>
+#include <math.h>
 #include <stdio.h>
 
 #include "esp_log.h"
@@ -15,6 +16,8 @@
 #include "wifi_manager.h"
 #include "cloud_telemetry.h"
 #include "sht31.h"
+#include "ds18b20_bus.h"
+#include "autotune.h"
 
 static const char *TAG = "web_server";
 
@@ -70,6 +73,14 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     json_escape(ssid_e, sizeof(ssid_e), ssid ? ssid : "");
     json_escape(dev,    sizeof(dev),    cloud_telemetry_device_id());
 
+    char tres[12];
+    if (isnan(s.last_sample.heater_temperature)) snprintf(tres, sizeof(tres), "null");
+    else snprintf(tres, sizeof(tres), "%.1f", s.last_sample.heater_temperature);
+    fa10t_config_t cfg;
+    app_state_copy_config(&cfg);
+    autotune_status_t ats;
+    autotune_get_status(&ats);
+
     char buf[1280];
     int n = snprintf(buf, sizeof(buf),
         "{"
@@ -78,6 +89,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         "\"sp_eff\":%.1f,\"sp_cfg\":%.1f,"
         "\"drv\":%.0f,\"fan\":%.0f,\"aux\":%.0f,"
         "\"hum\":%.1f,\"hum_tgt\":%.1f,\"hum_fault\":%d,"
+        "\"t_res\":%s,\"res_asg\":%d,\"res_fault\":%d,"
         "\"op_mode\":%d,\"run_state\":%d,\"warmup\":%d,\"cooling\":%d,\"etapa\":%u,"
         "\"elapsed_s\":%lu,\"total_s\":%lu,\"remaining_s\":%lu,"
         "\"t_min\":%.1f,\"t_max\":%.1f,"
@@ -86,6 +98,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         "\"hours_total\":%.1f,\"hours_svc\":%.1f,"
         "\"sessions\":%lu,\"sess_ok\":%lu,\"sess_int\":%lu,"
         "\"fan_faults\":%lu,\"power_fails\":%lu,\"t_max_hist\":%.1f,"
+        "\"kp\":%.4f,\"ki\":%.6f,\"kd\":%.3f,\"pid_at\":%d,\"at_state\":%d,"
         "\"ssid\":\"%s\",\"ip\":\"%s\""
         "}",
         dev,
@@ -94,6 +107,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         s.effective_setpoint, s.setpoint,
         s.ssr_drv_duty * 100.0f, s.ssr_fan_duty * 100.0f, s.ssr_aux_duty * 100.0f,
         s.humidity, s.humidity_target, s.humidity_fault ? 1 : 0,
+        tres, s.last_sample.heater_assigned ? 1 : 0, s.last_sample.heater_fault ? 1 : 0,
         (int)s.op_mode, (int)s.run_state, s.warmup_done ? 1 : 0,
         s.cooling_active ? 1 : 0,
         (unsigned)s.etapa_activa,
@@ -107,6 +121,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         (unsigned long)t.sessions_interrupted,
         (unsigned long)t.fan_fault_count, (unsigned long)t.power_fail_count,
         t.t_max_historica,
+        cfg.kp, cfg.ki, cfg.kd, autotune_is_tuned() ? 1 : 0, (int)ats.state,
         ssid_e, ip);
 
     httpd_resp_set_type(req, "application/json");
@@ -156,15 +171,15 @@ static esp_err_t diag_get_handler(httpd_req_t *req)
     }
 
     float rh = 0, t = 0;
-    bool valid = false;
-    esp_err_t serr = sht31_read_managed(&rh, &t, &valid);
+    esp_err_t serr = sht31_read(&rh, &t);   // directa: no toca la máquina del heater de sensor_task
+    bool valid = (serr == ESP_OK);
 
     app_state_lock();
     bool hum_fault = app_state_get()->humidity_fault;
     float hum_last = app_state_get()->humidity;
     app_state_unlock();
 
-    char buf[512];
+    char buf[1024];
     int pos = snprintf(buf, sizeof(buf),
         "{\"i2c_devices\":[");
     for (int i = 0; i < n; i++) {
@@ -175,11 +190,21 @@ static esp_err_t diag_get_handler(httpd_req_t *req)
         "],\"sht31_on_bus\":%s,"
         "\"sht31_read\":\"%s\",\"sht31_valid\":%s,"
         "\"sht31_rh\":%.1f,\"sht31_t\":%.1f,"
-        "\"hum_fault\":%s,\"hum_last\":%.1f}",
+        "\"hum_fault\":%s,\"hum_last\":%.1f,\"probes\":[",
         sht31_found ? "true" : "false",
         esp_err_to_name(serr), valid ? "true" : "false",
         rh, t,
         hum_fault ? "true" : "false", hum_last);
+
+    ds18b20_probe_t pr[DS18B20_MAX_SENSORS];
+    const int np = ds18b20_bus_get_probes(pr, DS18B20_MAX_SENSORS);
+    for (int i = 0; i < np; i++) {
+        pos += snprintf(buf + pos, sizeof(buf) - pos,
+            "%s{\"rom\":\"%016llX\",\"t\":%.2f,\"ok\":%d,\"res\":%d}",
+            i ? "," : "", (unsigned long long)pr[i].rom, pr[i].temperature_c,
+            pr[i].valid ? 1 : 0, pr[i].is_heater ? 1 : 0);
+    }
+    pos += snprintf(buf + pos, sizeof(buf) - pos, "]}");
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");

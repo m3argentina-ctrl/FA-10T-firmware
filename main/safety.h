@@ -17,12 +17,15 @@ typedef enum {
     SAFETY_WDT_TIMEOUT     = 1 << 3,
     SAFETY_FAN_FAULT       = 1 << 4,
     SAFETY_FAN_RELAY_STUCK = 1 << 5,
+    SAFETY_HEATER_OVERTEMP = 1 << 6,    // sonda de resistencias > HEATER_LIMIT_TEMP_C
+    SAFETY_HEATER_PROBE_FAULT = 1 << 7, // sonda de resistencias asignada sin lectura con calor pedido
     // Warning bits — diagnostics only, do NOT cut the SSR.
     SAFETY_WARN_NEAR_LIMIT = 1 << 8,
 } safety_fault_t;
 
 #define SAFETY_TRIP_MASK   (SAFETY_OVERTEMP | SAFETY_SENSOR_FAULT | SAFETY_RUNAWAY | \
-                            SAFETY_WDT_TIMEOUT | SAFETY_FAN_FAULT | SAFETY_FAN_RELAY_STUCK)
+                            SAFETY_WDT_TIMEOUT | SAFETY_FAN_FAULT | SAFETY_FAN_RELAY_STUCK | \
+                            SAFETY_HEATER_OVERTEMP | SAFETY_HEATER_PROBE_FAULT)
 #define SAFETY_WARN_MASK   (SAFETY_WARN_NEAR_LIMIT)
 
 typedef struct {
@@ -47,10 +50,13 @@ esp_err_t safety_wdt_unsubscribe(void);
 //                    límite SAFETY_LIMIT_TEMP_C (90 °C). Pasar 0 si no aplica.
 // fan_fault:         caller-supplied, true if turbine current < 70% nominal.
 // fan_relay_stuck:   caller-supplied, true if duty=0 but current > 30% nominal.
+// heater_temp_c:     sonda de resistencias (NAN = sin lectura/sin asignar) → HEATER_LIMIT_TEMP_C.
+// heater_probe_fault: la sonda asignada no lee y se está pidiendo calor.
 uint32_t safety_evaluate(float temperature, float limit_temperature,
                          float duty, float dt_s,
                          bool sensor_fault, bool fan_fault,
-                         bool fan_relay_stuck);
+                         bool fan_relay_stuck,
+                         float heater_temp_c, bool heater_probe_fault);
 
 uint32_t safety_get_faults(void);
 

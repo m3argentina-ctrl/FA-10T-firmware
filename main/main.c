@@ -35,6 +35,8 @@
 #include "web_server.h"
 #include "cloud_telemetry.h"
 #include "ota_update.h"
+#include "tune_store.h"
+#include "autotune.h"
 
 #include "tasks/sensor_task.h"
 #include "tasks/control_task.h"
@@ -146,6 +148,20 @@ void app_main(void)
     }
 
     app_state_set_config(&cfg);
+
+    // Autotune y sonda de resistencias: en la partición "factory" (sobreviven al RESET TOTAL).
+    tune_store_init();
+    autotune_init();
+    float kp, ki, kd;
+    if (tune_store_load_pid(&kp, &ki, &kd)) {
+        cfg.kp = kp;
+        cfg.ki = ki;
+        cfg.kd = kd;
+        app_state_set_config(&cfg);
+        autotune_set_tuned(true);
+        ESP_LOGI(TAG, "PID de autotune: Kp=%.4f Ki=%.6f Kd=%.3f", kp, ki, kd);
+    }
+    ds18b20_bus_set_heater_rom(tune_store_load_heater_rom());
 
     telemetry_init();
     recovery_init();

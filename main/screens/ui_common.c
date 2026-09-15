@@ -101,12 +101,37 @@ static void nav_btn_click_cb(lv_event_t *e)
     ui_screen_id_t id = (ui_screen_id_t)(uintptr_t)lv_event_get_user_data(e);
     // MANUAL y PROGRAMAS pueden pisar una sesión en curso → pasan por el guard,
     // que avisa si hay un proceso vivo (mismo tipo u otro). El resto navega
-    // directo (INICIO/TECNICA/ALARMAS no arrancan ni cortan nada).
+    // directo (INICIO/ALARMAS no arrancan ni cortan nada).
     if (id == UI_SCREEN_PROG_MANUAL || id == UI_SCREEN_PROG_PROGRAMAS) {
         process_switch_request(id);
     } else {
         ui_show_screen(id);
     }
+}
+
+// Acceso oculto a AREA TECNICA: no tiene botón en el menú (el cliente no la ve).
+// Se entra manteniendo apretado el isologo TECNICA_HOLD_MS y después pide el PIN
+// de servicio. Navega con el dedo todavía apoyado para que el técnico sepa que ya
+// puede soltar; lv_indev_wait_release() descarta ese mismo toque para que no caiga
+// sobre el teclado del PIN.
+#define TECNICA_HOLD_MS  5000
+
+static uint32_t s_logo_press_tick;
+static bool     s_logo_fired;
+
+static void logo_hold_cb(lv_event_t *e)
+{
+    if (lv_event_get_code(e) == LV_EVENT_PRESSED) {
+        s_logo_press_tick = lv_tick_get();
+        s_logo_fired      = false;
+        return;
+    }
+    // LV_EVENT_PRESSING: llega en cada lectura del touch mientras siga apoyado.
+    if (s_logo_fired || lv_tick_elaps(s_logo_press_tick) < TECNICA_HOLD_MS) return;
+    s_logo_fired = true;
+    lv_indev_t *indev = lv_indev_get_act();
+    if (indev) lv_indev_wait_release(indev);
+    if (lv_scr_act() != s_screens[UI_SCREEN_TECNICA]) ui_show_screen(UI_SCREEN_TECNICA);
 }
 
 void ui_left_panel_attach(lv_obj_t *scr, ui_screen_id_t active)
@@ -119,29 +144,34 @@ void ui_left_panel_attach(lv_obj_t *scr, ui_screen_id_t active)
     lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
     lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
 
-    // Header: isologo (cuadrado 64×64, fondo blanco que coincide con el panel)
+    // Header: isologo (cuadrado 64×64, fondo blanco que coincide con el panel).
+    // También es la entrada oculta a AREA TECNICA (ver logo_hold_cb).
     lv_obj_t *logo = lv_img_create(panel);
     lv_img_set_src(logo, &isologo_64);
     lv_obj_align(logo, LV_ALIGN_TOP_MID, 0, 4);
+    lv_obj_add_flag(logo, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(logo, logo_hold_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(logo, logo_hold_cb, LV_EVENT_PRESSING, NULL);
 
     // El modelo se muestra grande en SPLASH e INICIO right pane; acá en el
     // panel izq solo va el isologo + botones para no apretar tanto.
 
-    // Buttons. All 92×32, evenly spaced in the lower 220px of the panel.
+    // Botones 92×46 repartidos en los 224 px de abajo del panel. AREA TECNICA ya
+    // no tiene botón (ver logo_hold_cb), así que los 4 que quedan son más altos.
     static const nav_btn_t btns[] = {
         { "INICIO",    0x888888, UI_SCREEN_INICIO          },
         { "MANUAL",    0xE87A20, UI_SCREEN_PROG_MANUAL     },
         { "PROGRAMAS", 0x2E9E3B, UI_SCREEN_PROG_PROGRAMAS  },
-        { "TECNICA",   0x2196F3, UI_SCREEN_TECNICA         },
         { "ALARMAS",   0xD32F2F, UI_SCREEN_ALARMA          },
     };
     const int n = sizeof(btns) / sizeof(btns[0]);
     const int top_y = 88;
     const int span  = LV_VER_RES - top_y - 8;
     const int step  = span / n;
+    const int btn_h = 46;
 
     for (int i = 0; i < n; ++i) {
-        int y = top_y + i * step + (step - 32) / 2;
+        int y = top_y + i * step + (step - btn_h) / 2;
 
         // Green triangle indicator (only on the active row)
         if (btns[i].target == active) {
@@ -149,11 +179,12 @@ void ui_left_panel_attach(lv_obj_t *scr, ui_screen_id_t active)
             lv_label_set_text(tri, LV_SYMBOL_PLAY);   // right-pointing triangle
             lv_obj_set_style_text_color(tri, UI_COL_GREEN_DEEP, 0);
             lv_obj_set_style_text_font(tri, ui_font_md(), 0);
-            lv_obj_align(tri, LV_ALIGN_TOP_LEFT, 2, y + 8);
+            lv_obj_align(tri, LV_ALIGN_TOP_LEFT, 2,
+                         y + (btn_h - lv_font_get_line_height(ui_font_md())) / 2);
         }
 
         lv_obj_t *b = lv_btn_create(panel);
-        lv_obj_set_size(b, 92, 32);
+        lv_obj_set_size(b, 92, btn_h);
         lv_obj_align(b, LV_ALIGN_TOP_LEFT, 16, y);
         lv_obj_set_style_bg_color(b, lv_color_hex(btns[i].color_hex), 0);
         lv_obj_set_style_radius(b, 4, 0);

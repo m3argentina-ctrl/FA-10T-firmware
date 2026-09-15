@@ -1,5 +1,11 @@
 # PROMPT — Generar Manual de Usuario del Controlador Control ESP32-S3 v3.0
 
+> **OBSOLETO (2026-09-15).** El manual ya está hecho y verificado contra el firmware:
+> `D:\BIOORIGEN\DESHIDRATADORES\CONTROL TACTIL ESP32\Docs\Manual_Usuario_Control_Tactil.pdf`
+> (y el interno `Manual_Area_Tecnica_INTERNO.pdf`). Se regeneran con los scripts de
+> `Docs\fuentes_manuales\`. Este prompt conserva datos de la placa v1 (PT1000, corriente
+> de turbinas, CALIBRAR): no usarlo.
+
 > Copiá TODO lo que sigue (desde "Tarea" hasta el final) y pegalo en una nueva
 > conversación con Claude. El manual generado debería ser de ~15 a 30 páginas
 > en Markdown, listo para convertir a PDF.
@@ -28,7 +34,7 @@ relés de estado sólido (SSR). Tiene una pantalla táctil color 3.5" como
 
 - **Fabricante**: Bio Origen — alimentos deshidratados.
 - **Modelo del controlador**: Control ESP32-S3 v3.0 (Firmware versión 3 fase 4).
-- **Modelo de equipo por defecto**: IND-26MTO (editable desde Área Técnica).
+- **Modelo de equipo por defecto**: IND-26MTO (lo configura el servicio técnico).
 - **Hardware**:
   - Display: pantalla táctil color 480×320 con touch capacitivo.
   - Audio: parlante interno con clicks suaves al tocar la pantalla.
@@ -49,9 +55,9 @@ Todas las pantallas operativas (excepto SPLASH) tienen:
 
 - **Panel izquierdo blanco** (120 px de ancho) con:
   - El **isologo** de Bio Origen arriba (la "b" verde con flor naranja).
-  - 5 botones de navegación verticales: **INICIO** (gris), **MANUAL**
-    (naranja), **PROGRAMAS** (verde), **TECNICA** (azul), **ALARMAS**
-    (rojo). Un pequeño triángulo verde indica la pantalla activa.
+  - 4 botones de navegación verticales: **INICIO** (gris), **MANUAL**
+    (naranja), **PROGRAMAS** (verde), **ALARMAS** (rojo). Un pequeño
+    triángulo verde indica la pantalla activa.
 - **Panel derecho oscuro** (360 px) con el contenido de la pantalla.
 
 ## Pantallas — descripción detallada
@@ -197,39 +203,13 @@ Muy similar a OPERACIÓN MANUAL. Diferencias:
 > primera etapa. Esto asegura que el operador obtenga el tiempo real de
 > proceso útil, no incluyendo el calentamiento inicial.
 
-### 9. ÁREA TÉCNICA (acceso protegido por PIN)
+> **NO DOCUMENTAR el Área Técnica.** Es exclusiva del servicio técnico de
+> Bio Origen: no tiene botón en el menú y su forma de acceso es reservada.
+> El manual NO debe mencionar cómo entrar, el PIN, ni sus funciones. Como
+> mucho, una frase: "la configuración interna del equipo la realiza el
+> servicio técnico de Bio Origen".
 
-**Modal de PIN al ingresar** (full-screen, fondo oscuro):
-- Título "INGRESE PIN" en azul.
-- Campo grande con borde azul que muestra los dígitos como asteriscos.
-- Teclado numérico 3×3 (1-9 + 0 + ⌫ + OK) + botón **CANCELAR** (rojo)
-  ancho debajo, que vuelve a INICIO sin autenticar.
-- PIN por defecto: **1234** (modificable desde la misma pantalla).
-
-**Pantalla Técnica autenticada**:
-- Título "AREA TECNICA" en azul.
-- **Fila 1 de 4 cajitas**: HRS TOTAL, CICLOS SSR, DESDE SVC (cambia de
-  blanco a amarillo con icono ⚠ después de 450 hs), FALLA FAN.
-- **Fila 2 de 4 cajitas**: Kp / Ki (ganancias del PID), I NOM
-  (corriente nominal aprendida), T MAX HIST (temperatura máxima
-  histórica), SESIONES (cantidad de sesiones completadas).
-- **Log de eventos** (3 últimas entradas) con colores:
-  - Verde + "+" para arranques de sesión.
-  - Rojo + "!" para fallas.
-  - Naranja + "~" para cortes de energía.
-- Campo **MODELO** editable (tap abre el teclado alfanumérico modal).
-- **Fila de 5 botones abajo**:
-  - **SALIR** (rojo) — vuelve a INICIO y desloguea.
-  - **AUTOTUNE** (azul) — calibración automática del PID (stub).
-  - **CALIBRAR** (naranja) — ajuste fino de la calibración de
-    temperatura.
-  - **RESET SVC** (verde) — resetea el contador de horas desde el
-    último servicio.
-  - **CAMBIAR PIN** (violeta) — abre 2 modales numéricos secuenciales:
-    primero "NUEVO PIN" (1-4 dígitos), luego "CONFIRMAR PIN NUEVO". Si
-    coinciden, el PIN se guarda en memoria persistente.
-
-### 10. ALARMA
+### 9. ALARMA
 
 Pantalla que aparece automáticamente si se dispara una falla de
 seguridad (sobre-temperatura, fuga térmica, falla de turbinas, sensor
@@ -247,9 +227,7 @@ botones, teclas, cualquier zona activa.
 
 Estos valores se guardan en memoria no volátil y sobreviven al apagado:
 
-- **Modelo del equipo**: editable desde AREA TECNICA.
-- **PIN de servicio**: 4 dígitos, default 1234, modificable desde AREA
-  TECNICA.
+- **Modelo del equipo**: lo configura el servicio técnico de Bio Origen.
 - **Programas 1 a 6**: cada uno con nombre, 3 etapas (T + duración) y
   tiempo total.
 - **Historial**: horas totales, ciclos de SSR, T máxima histórica,
@@ -298,21 +276,6 @@ Generá secciones paso-a-paso para cada uno de estos casos:
 2. La resistencia y turbinas se apagan, el tiempo se congela.
 3. Tocar **REINICIAR** para reanudar.
 
-### Caso 5: Cambiar el PIN de servicio
-1. INICIO → **TECNICA**.
-2. Ingresar el PIN actual (default 1234) y tocar **OK**.
-3. Tocar **CAMBIAR PIN**.
-4. Tipear el PIN nuevo (1-4 dígitos) y tocar **OK**.
-5. Confirmar el mismo PIN y tocar **OK**.
-6. Tocar **SALIR** para volver a INICIO.
-
-### Caso 6: Cambiar el modelo del equipo (ABM)
-1. INICIO → **TECNICA** → autenticar.
-2. Tocar el campo **MODELO**.
-3. En el teclado modal, borrar y tipear el nombre nuevo.
-4. Tocar **OK** — el nuevo modelo aparece en la pantalla SPLASH y en
-   INICIO.
-
 ## Estados y colores
 
 Resumen para incluir en el manual:
@@ -340,8 +303,6 @@ Generá una sección con al menos estos casos:
   ambiente muy frío.
 - **El equipo entró en ALARMA**: identificar el tipo de alarma en
   pantalla, ver cómo limpiar el latch.
-- **Olvidé el PIN**: hay que conectar el equipo al servicio técnico para
-  resetearlo.
 - **Pantalla no responde al tacto**: instrucciones de limpieza, no usar
   guantes mojados, no apretar muy fuerte.
 - **El tiempo nunca empieza a descender**: explicar que el tiempo NO
@@ -367,12 +328,12 @@ Quiero el manual con **estas secciones, en este orden**:
    generar imágenes).
 7. **Modo PROGRAMAS** (3-4 páginas): lista, modal de decisión, wizard
    de edición etapa por etapa, resumen, ejecución.
-8. **Área Técnica** (2 páginas): autenticación, telemetría disponible,
-   acciones (autotune, calibrar, reset svc, cambiar PIN), edición del
-   modelo.
+8. **Servicio técnico** (1 párrafo): la configuración interna del equipo
+   la realiza el servicio técnico de Bio Origen. NO describir cómo se
+   accede ni qué hay adentro.
 9. **Alarmas y seguridad** (1-2 páginas): tipos de alarma, cómo
    reconocer, cómo limpiar.
-10. **Casos de uso típicos**: los 6 escenarios listados arriba como
+10. **Casos de uso típicos**: los 4 escenarios listados arriba como
     procedimientos paso a paso.
 11. **Solución de problemas** (FAQ).
 12. **Glosario** (PID, SSR, SP, etapa, deshidratado).

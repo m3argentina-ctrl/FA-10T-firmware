@@ -11,6 +11,7 @@
 #include "programa.h"
 #include "safety.h"
 #include "recovery.h"
+#include "autotune.h"
 #include "screens/ui_common.h"
 
 static const char *TAG = "cloud_cmd";
@@ -103,6 +104,7 @@ bool cloud_cmd_execute(const cloud_cmd_t *cmd)
     ESP_LOGI(TAG, "ejecutando comando: %s", cmd->type);
 
     if (strcmp(cmd->type, "stop") == 0) {
+        autotune_cancel("DETENIDO DESDE LA WEB");
         app_state_lock();
         run_state_t rs = app_state_get()->run_state;
         float temp = app_state_get()->last_sample.temperature;
@@ -135,6 +137,10 @@ bool cloud_cmd_execute(const cloud_cmd_t *cmd)
     }
 
     if (strcmp(cmd->type, "start_manual") == 0) {
+        if (autotune_is_running()) {
+            ESP_LOGW(TAG, "start_manual rechazado: autotune en curso");
+            return false;
+        }
         if (cmd->sp < 20.0f || cmd->sp > 90.0f) {
             ESP_LOGW(TAG, "start_manual: sp=%.1f fuera de rango", cmd->sp);
             return false;
@@ -157,6 +163,10 @@ bool cloud_cmd_execute(const cloud_cmd_t *cmd)
     }
 
     if (strcmp(cmd->type, "start_program") == 0) {
+        if (autotune_is_running()) {
+            ESP_LOGW(TAG, "start_program rechazado: autotune en curso");
+            return false;
+        }
         if (cmd->slot < 0 || cmd->slot >= PROGRAMA_SLOTS) {
             ESP_LOGW(TAG, "start_program: slot=%d fuera de rango", cmd->slot);
             return false;

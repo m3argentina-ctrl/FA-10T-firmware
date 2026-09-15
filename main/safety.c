@@ -1,5 +1,6 @@
 #include "safety.h"
 
+#include <math.h>
 #include <string.h>
 
 #include "esp_log.h"
@@ -112,7 +113,8 @@ static void start_recovery_ramp(void)
 uint32_t safety_evaluate(float temperature, float limit_temperature,
                          float duty, float dt_s,
                          bool sensor_fault, bool fan_fault,
-                         bool fan_relay_stuck)
+                         bool fan_relay_stuck,
+                         float heater_temp_c, bool heater_probe_fault)
 {
     safety_lock();
     s.faults = 0;
@@ -129,6 +131,14 @@ uint32_t safety_evaluate(float temperature, float limit_temperature,
 
     if (fan_relay_stuck) {
         trip(SAFETY_FAN_RELAY_STUCK, "fan relay stuck (current with duty=0)", true);
+    }
+
+    if (heater_probe_fault) {
+        trip(SAFETY_HEATER_PROBE_FAULT, "heater-zone probe not reading while heating", true);
+    }
+
+    if (!isnan(heater_temp_c) && heater_temp_c > HEATER_LIMIT_TEMP_C) {
+        trip(SAFETY_HEATER_OVERTEMP, "heater-zone over-temperature", true);
     }
 
     if (!sensor_fault && temperature > s.cfg.temp_max_c) {
