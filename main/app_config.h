@@ -58,7 +58,7 @@
 #ifndef CLOUD_TELEMETRY_ENABLED
 #define CLOUD_TELEMETRY_ENABLED      WIFI_ENABLED
 #endif
-#define CLOUD_PUSH_INTERVAL_S        5        // heartbeat cada 5 s
+#define CLOUD_PUSH_INTERVAL_S        10       // heartbeat cada 10 s (la web guarda 1 muestra/min)
 #define CLOUD_HTTP_TIMEOUT_MS        8000     // timeout del POST HTTPS
 #define CLOUD_RETRY_BACKOFF_MS       15000    // espera tras un push fallido
 #define CLOUD_TASK_STACK             12288    // TLS×2 (push+ack) + NVS recovery_clear
