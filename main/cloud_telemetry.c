@@ -327,7 +327,9 @@ static void cloud_task(void *arg)
     TickType_t      last_push = 0;
     bool            first     = true;
     bool            time_ok   = false;
-    const TickType_t interval = pdMS_TO_TICKS(CLOUD_PUSH_INTERVAL_S * 1000);
+    // El servidor puede pedir otro ritmo en cada respuesta ("next_push_s"):
+    // más lento en reposo, más rápido durante un proceso.
+    uint32_t        interval_s = CLOUD_PUSH_INTERVAL_S;
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));
@@ -345,7 +347,7 @@ static void cloud_task(void *arg)
 
         TickType_t now     = xTaskGetTickCount();
         bool       changed = (rs != last_rs);
-        bool       due     = !first && (now - last_push) >= interval;
+        bool       due     = !first && (now - last_push) >= pdMS_TO_TICKS(interval_s * 1000);
 
         if (!(first || changed || due)) continue;
 
@@ -357,6 +359,13 @@ static void cloud_task(void *arg)
             last_push = now;
             last_rs   = rs;
             first     = false;
+
+            uint32_t next = cloud_cmd_next_push_s(resp, interval_s);
+            if (next != interval_s) {
+                ESP_LOGI(TAG, "heartbeat cada %lu s (lo pidio el servidor)",
+                         (unsigned long)next);
+                interval_s = next;
+            }
 
             // Procesar comandos remotos que llegaron en la respuesta.
             cloud_cmd_t cmds[CMD_MAX];

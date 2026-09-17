@@ -50,6 +50,14 @@ static float json_num(const char *pos, const char *key, float def)
     return (end != p) ? v : def;
 }
 
+uint32_t cloud_cmd_next_push_s(const char *json, uint32_t def)
+{
+    if (!json) return def;
+    float v = json_num(json, "next_push_s", (float)def);
+    if (v < 5.0f || v > 3600.0f) return def;   // fuera de rango: ignorar
+    return (uint32_t)v;
+}
+
 int cloud_cmd_parse(const char *json, cloud_cmd_t *cmds, int max_cmds)
 {
     if (!json || !cmds || max_cmds <= 0) return 0;

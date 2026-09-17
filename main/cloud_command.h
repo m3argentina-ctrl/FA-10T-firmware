@@ -24,6 +24,13 @@ typedef struct {
 // Llena cmds[] y devuelve la cantidad encontrada (0 si no hay).
 int cloud_cmd_parse(const char *json, cloud_cmd_t *cmds, int max_cmds);
 
+/**
+ * Intervalo de heartbeat que pide el servidor en la respuesta ("next_push_s").
+ * Permite que la nube afloje el ritmo cuando el equipo está en reposo y lo
+ * acelere durante un proceso. Devuelve `def` si la respuesta no lo trae.
+ */
+uint32_t cloud_cmd_next_push_s(const char *json, uint32_t def);
+
 // Ejecuta un comando despachando a modo_manual / programa.
 // Devuelve true si se ejecutó con éxito.
 bool cloud_cmd_execute(const cloud_cmd_t *cmd);
