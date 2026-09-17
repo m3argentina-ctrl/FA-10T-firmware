@@ -186,7 +186,7 @@ static esp_err_t push_snapshot(const char *reason, char *resp_buf, size_t resp_s
         "\"temp\":%.1f,\"raw_temp\":%.1f,\"fault\":%d,"
         "\"sp_eff\":%.1f,\"sp_cfg\":%.1f,"
         "\"drv\":%.0f,\"fan\":%.0f,\"aux\":%.0f,"
-        "\"hum\":%.1f,\"hum_fault\":%d,"
+        "\"hum\":%.1f,\"hum_tgt\":%.1f,\"hum_fault\":%d,"
         "\"op_mode\":%d,\"run_state\":%d,\"warmup\":%d,\"etapa\":%u,"
         "\"elapsed_s\":%lu,\"total_s\":%lu,\"remaining_s\":%lu,"
         "\"t_min\":%.1f,\"t_max\":%.1f,"
@@ -202,7 +202,7 @@ static esp_err_t push_snapshot(const char *reason, char *resp_buf, size_t resp_s
         s.last_sample.fault ? 1 : 0,
         s.effective_setpoint, s.setpoint,
         s.ssr_drv_duty * 100.0f, s.ssr_fan_duty * 100.0f, s.ssr_aux_duty * 100.0f,
-        s.humidity, s.humidity_fault ? 1 : 0,
+        s.humidity, s.humidity_target, s.humidity_fault ? 1 : 0,
         (int)s.op_mode, (int)s.run_state, s.warmup_done ? 1 : 0,
         (unsigned)s.etapa_activa,
         (unsigned long)s.session_elapsed_s, (unsigned long)s.session_total_s,
